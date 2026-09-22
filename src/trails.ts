@@ -14,7 +14,7 @@ export type TrailCategory = 'hiking' | 'cycling' | 'riding' | 'winter' | 'via_fe
 export interface TrailCategoryInfo {
   id: TrailCategory;
   name: string;
-  /** All lines look the same (dotted, light grey); the icon repeated along the line tells them apart. */
+  /** All lines look the same (plain, light grey); the icon repeated along the line tells them apart. */
   icon: string;
   /** Categories whose joined lines must be at least 500 m long to show. */
   minLengthM: number;

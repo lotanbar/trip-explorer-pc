@@ -44,14 +44,14 @@ export function addOverlayLayers(map: MapLibreMap): void {
     map.addSource(id, { type: 'geojson', data: EMPTY });
   }
 
-  // ── Trails: dotted light grey lines, told apart by the icon repeated along them ──
+  // ── Trails: plain light grey lines, told apart only by the icon repeated along them ──
   map.addLayer({
     id: LAYERS.trails,
     type: 'line',
     source: SRC_TRAILS,
     minzoom: TRAILS_MIN_ZOOM,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': TRAIL_COLOR, 'line-width': 3, 'line-dasharray': [0, 2.4] },
+    paint: { 'line-color': TRAIL_COLOR, 'line-width': 2, 'line-opacity': 0.9 },
   });
   map.addLayer({
     id: LAYERS.trailsIcons,
