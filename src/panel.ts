@@ -9,11 +9,13 @@ import { isBrowserOpen } from './browser';
 import { saveSettings, settings } from './settings';
 
 export const PANEL_MIN_WIDTH = 340;
+/** The drag handle's width; the panel stops short of the window edge by this much so it stays grabbable. */
+const HANDLE_WIDTH = 6;
 
 const app = () => document.getElementById('app')!;
 
 export function panelWidth(): number {
-  return Math.max(PANEL_MIN_WIDTH, Math.min(window.innerWidth, settings.panelWidth ?? PANEL_MIN_WIDTH));
+  return Math.max(PANEL_MIN_WIDTH, Math.min(window.innerWidth - HANDLE_WIDTH, settings.panelWidth ?? PANEL_MIN_WIDTH));
 }
 
 function apply(): void {
@@ -47,7 +49,7 @@ export function initPanel(): void {
     handle.setPointerCapture(e.pointerId);
     app().classList.add('resizing');
     const move = (ev: PointerEvent) => {
-      settings.panelWidth = Math.round(Math.max(PANEL_MIN_WIDTH, Math.min(window.innerWidth, ev.clientX)));
+      settings.panelWidth = Math.round(Math.max(PANEL_MIN_WIDTH, Math.min(window.innerWidth - HANDLE_WIDTH, ev.clientX)));
       apply();
     };
     const up = () => {

@@ -335,7 +335,8 @@ button:hover {
   padding: 5px 8px;
   border-radius: 4px;
   font-size: 12px;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-width: 320px;
 }
 
