@@ -1,7 +1,7 @@
 import { Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { openMyPoi, openOsmPoi, openTrail } from './actions';
-import { closeBrowser } from './browser';
+import { browserHistory, closeBrowser, isBrowserOpen } from './browser';
 import { closePanel, initPanel } from './panel';
 import { installMapGestures } from './gestures';
 import type { FeatureCollection, Point } from 'geojson';
@@ -252,6 +252,11 @@ async function main(): Promise<void> {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeBrowser().catch((err) => setStatus('open', `Could not close: ${err}`));
+    // Alt+Left / Alt+Right walk the embedded browser's history even while the map has focus.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && isBrowserOpen()) {
+      e.preventDefault();
+      browserHistory(e.key === 'ArrowLeft' ? -1 : 1).catch(() => undefined);
+    }
     // WebView2 zoom control is on so touchpad pinch reaches the map; keep the page itself unscaled.
     if (e.ctrlKey && ['+', '-', '=', '0'].includes(e.key)) e.preventDefault();
   });

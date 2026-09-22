@@ -246,7 +246,9 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
 
 const BROWSER_LABEL: &str = "browser";
 
-/// Runs in every page the embedded browser loads. On Google it keeps only the search box and the
+/// Runs in every page the embedded browser loads. Everywhere: links that want a new window (which a
+/// child webview cannot open) navigate this webview instead, and Alt+Left / Alt+Right walk the
+/// history. On Google it keeps only the search box and the
 /// results: hides the Google bar, the mobile header row (settings / share / logo), the result-type
 /// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, the
 /// "AI Overview" title row and the rule that ran under the tabs, keeps the AI overview fully open
@@ -257,6 +259,22 @@ const BROWSER_LABEL: &str = "browser";
 /// change, so everything is found structurally; the ids used (`sfcnt`, `appbar`, `cnt`,
 /// `m-x-content`) are long-lived.
 const BROWSER_INIT_SCRIPT: &str = r#"
+(function () {
+  document.addEventListener('click', function (ev) {
+    var a = ev.target && ev.target.closest && ev.target.closest('a[target]');
+    if (a && /^_blank$/i.test(a.target)) a.target = '_self';
+  }, true);
+  var nativeOpen = window.open;
+  window.open = function (url, target, features) {
+    if (url && !/^_self$/i.test(target || '') && !features) { location.href = String(url); return null; }
+    return nativeOpen.apply(window, arguments);
+  };
+  window.addEventListener('keydown', function (ev) {
+    if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); history.back(); }
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); history.forward(); }
+  });
+})();
 (function () {
   if (!/(^|\.)google\./.test(location.hostname)) return;
   var css = '#gb, #gbwa, [aria-label="Google apps"], #sfcnt, #appbar, #oFNiHe { display: none !important; }' +
@@ -510,6 +528,16 @@ async fn browser_close(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
+/// Walks the embedded browser's history (`delta` -1 = back, +1 = forward); used when the shortcut is
+/// pressed while the main window, not the browser, has focus.
+#[tauri::command]
+async fn browser_history(window: tauri::Window, delta: i32) -> Result<(), String> {
+    if let Some(webview) = browser_webview(&window) {
+        webview.eval(&format!("history.go({delta})")).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -541,6 +569,7 @@ pub fn run() {
             browser_open,
             browser_resize,
             browser_close,
+            browser_history,
             scan_trips,
             read_text,
             load_settings,

@@ -30,3 +30,8 @@ export async function closeBrowser(): Promise<void> {
   open = false;
   await invoke('browser_close');
 }
+
+/** Walks the browser's history: -1 = back, +1 = forward. */
+export async function browserHistory(delta: number): Promise<void> {
+  if (open) await invoke('browser_history', { delta });
+}
