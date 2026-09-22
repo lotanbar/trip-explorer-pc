@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyLengthRule, parseTrails, trailHover, type TrailLine } from '../src/trails';
+import { applyLengthRule, mergePieces, parseTrails, trailHover, type TrailLine } from '../src/trails';
 
 // ~0.001° of latitude is 111 m; these pieces are 222 m each.
 function way(id: number, tags: Record<string, string>, lat0: number, lon = 25.0): object {
@@ -86,5 +86,38 @@ describe('500 m rule', () => {
       ],
     });
     expect(applyLengthRule(lines).map((l: TrailLine) => l.category)).toEqual(['via_ferrata', 'hiking']);
+  });
+});
+
+describe('merging pieces', () => {
+  it('joins touching members of one route into a single line, in order', () => {
+    const rel = (members: [number, number][][]) => ({
+      type: 'relation',
+      id: 7,
+      tags: { route: 'hiking', name: 'Loop' },
+      members: members.map((coords, i) => ({ type: 'way', ref: i, role: '', geometry: coords.map(([lat, lon]) => ({ lat, lon })) })),
+    });
+    // Three pieces, the middle one reversed, plus one detached piece.
+    const lines = parseTrails({
+      elements: [rel([
+        [[37, 25], [37.001, 25]],
+        [[37.002, 25], [37.001, 25]],
+        [[37.002, 25], [37.003, 25]],
+        [[38, 25], [38.001, 25]],
+      ])],
+    });
+    const merged = mergePieces(lines);
+    expect(merged).toHaveLength(2);
+    expect(merged[0].coords.map((c) => c[1])).toEqual([37, 37.001, 37.002, 37.003]);
+  });
+
+  it('does not join pieces of different routes', () => {
+    const lines = parseTrails({
+      elements: [
+        { type: 'relation', id: 1, tags: { route: 'hiking' }, members: [{ type: 'way', ref: 1, role: '', geometry: [{ lat: 37, lon: 25 }, { lat: 37.001, lon: 25 }] }] },
+        { type: 'relation', id: 2, tags: { route: 'hiking' }, members: [{ type: 'way', ref: 2, role: '', geometry: [{ lat: 37.001, lon: 25 }, { lat: 37.002, lon: 25 }] }] },
+      ],
+    });
+    expect(mergePieces(lines)).toHaveLength(2);
   });
 });

@@ -244,9 +244,63 @@ export function applyLengthRule(lines: TrailLine[]): TrailLine[] {
 /** Parses an Overpass answer into trail pieces. Exported for tests. */
 export const parseTrails = parse;
 
+/** Pieces of the same route (relation) or the same tagged way chain, keyed for merging. */
+function mergeKey(line: TrailLine): string {
+  const rel = /^(r\d+):/.exec(line.id);
+  return rel ? rel[1] : line.signature;
+}
+
+/**
+ * Joins pieces that touch end to end into long lines, so a route split into hundreds of ways
+ * (and clipped by strips) is drawn as few features, each carrying icons at the normal spacing.
+ */
+export function mergePieces(lines: TrailLine[]): TrailLine[] {
+  const groups = new Map<string, TrailLine[]>();
+  for (const line of lines) {
+    const key = mergeKey(line);
+    const g = groups.get(key);
+    if (g) g.push(line);
+    else groups.set(key, [line]);
+  }
+  const out: TrailLine[] = [];
+  for (const group of groups.values()) {
+    const byEnd = new Map<string, TrailLine[]>();
+    const add = (k: string, l: TrailLine) => {
+      const list = byEnd.get(k);
+      if (list) list.push(l);
+      else byEnd.set(k, [l]);
+    };
+    for (const l of group) {
+      add(endpointKey(l.coords[0]), l);
+      add(endpointKey(l.coords[l.coords.length - 1]), l);
+    }
+    const used = new Set<string>();
+    /** An unused piece touching `end`, oriented to continue from it (without the shared point). */
+    const takeNext = (end: [number, number]): [number, number][] | null => {
+      for (const cand of byEnd.get(endpointKey(end)) ?? []) {
+        if (used.has(cand.id)) continue;
+        used.add(cand.id);
+        const c = cand.coords;
+        if (endpointKey(c[0]) === endpointKey(end)) return c.slice(1);
+        return c.slice(0, -1).reverse();
+      }
+      return null;
+    };
+    for (const start of group) {
+      if (used.has(start.id)) continue;
+      used.add(start.id);
+      let coords = start.coords.slice();
+      for (let next = takeNext(coords[coords.length - 1]); next; next = takeNext(coords[coords.length - 1])) coords = coords.concat(next);
+      for (let prev = takeNext(coords[0]); prev; prev = takeNext(coords[0])) coords = prev.reverse().concat(coords);
+      out.push({ ...start, coords });
+    }
+  }
+  return out;
+}
+
 export function trailsGeoJson(visibleCategories: Set<string>): FeatureCollection<LineString> {
   const features: FeatureCollection<LineString>['features'] = [];
-  for (const line of applyLengthRule([...trailStore.items.values()])) {
+  for (const line of mergePieces(applyLengthRule([...trailStore.items.values()]))) {
     if (!visibleCategories.has(line.category)) continue;
     const info = TRAIL_CATEGORIES.find((c) => c.id === line.category)!;
     features.push({

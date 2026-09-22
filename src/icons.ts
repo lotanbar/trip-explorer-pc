@@ -1,7 +1,7 @@
 /**
  * Bundled SVG icons (Maki, Temaki or hand-drawn) and the marker / line-pattern images built from
  * them for MapLibre. Markers follow the reference app's pin: round head, pointed tail, group color
- * fill, white icon, thin outline (amber for my POIs, white for OSM POIs).
+ * fill, white icon, thin white outline. My POIs have a squircle head, OSM POIs a round one.
  */
 
 const svgFiles = import.meta.glob('./icons/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -22,8 +22,7 @@ const PIXEL_RATIO = 2;
 export const MARKER_WIDTH = 30;
 export const MARKER_HEIGHT = 39;
 
-export const MY_POI_OUTLINE = '#FFC107';
-export const OSM_POI_OUTLINE = '#FFFFFF';
+export const POI_OUTLINE = '#FFFFFF';
 export const TRAIL_COLOR = '#BDBDBD';
 /** Icons along trail lines are brighter than the line so they stand out. */
 export const TRAIL_ICON_COLOR = '#E0E0E0';
@@ -46,8 +45,13 @@ export interface MarkerImage {
   pixelRatio: number;
 }
 
-/** A pin in `color` with `icon` (white) in the head, or a white dot for the "marker" icon. */
-export async function buildMarker(icon: string, color: string, outline: string): Promise<MarkerImage> {
+export type MarkerShape = 'circle' | 'squircle';
+
+/**
+ * A pin in `color` with `icon` (white) in the head, or a white dot for the "marker" icon.
+ * My POIs get a squircle head, OSM POIs a round one; everything else is identical.
+ */
+export async function buildMarker(icon: string, color: string, outline: string, shape: MarkerShape = 'circle'): Promise<MarkerImage> {
   const w = MARKER_WIDTH * PIXEL_RATIO;
   const h = MARKER_HEIGHT * PIXEL_RATIO;
   const canvas = document.createElement('canvas');
@@ -75,7 +79,23 @@ export async function buildMarker(icon: string, color: string, outline: string):
   const cy = w / 2;
   const r = w / 2 - stroke;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  if (shape === 'squircle') {
+    // Superellipse |x|^n + |y|^n = r^n with n = 4: rounder than a rounded square, squarer than a circle.
+    const n = 4;
+    const steps = 96;
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * Math.PI * 2;
+      const c = Math.cos(t);
+      const sn = Math.sin(t);
+      const x = cx + Math.sign(c) * Math.pow(Math.abs(c), 2 / n) * r;
+      const y = cy + Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  } else {
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  }
   ctx.fill();
   ctx.stroke();
 

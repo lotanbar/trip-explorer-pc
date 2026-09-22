@@ -6,7 +6,7 @@
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import type { FeatureCollection } from 'geojson';
 import { ALL_GROUPS } from './groups';
-import { buildLineIcon, buildMarker, MY_POI_OUTLINE, OSM_POI_OUTLINE, TRAIL_COLOR } from './icons';
+import { buildLineIcon, buildMarker, POI_OUTLINE, TRAIL_COLOR } from './icons';
 import { OSM_POI_MIN_ZOOM } from './osmPois';
 import { TRAIL_CATEGORIES, TRAILS_MIN_ZOOM } from './trails';
 
@@ -30,8 +30,8 @@ const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 export async function addMarkerImages(map: MapLibreMap): Promise<void> {
   const jobs: Promise<void>[] = [];
   for (const group of ALL_GROUPS) {
-    jobs.push(buildMarker(group.icon, group.color, MY_POI_OUTLINE).then((img) => { map.addImage(`mine|${group.id}`, img.data, { pixelRatio: img.pixelRatio }); }));
-    jobs.push(buildMarker(group.icon, group.color, OSM_POI_OUTLINE).then((img) => { map.addImage(`osm|${group.id}`, img.data, { pixelRatio: img.pixelRatio }); }));
+    jobs.push(buildMarker(group.icon, group.color, POI_OUTLINE, 'squircle').then((img) => { map.addImage(`mine|${group.id}`, img.data, { pixelRatio: img.pixelRatio }); }));
+    jobs.push(buildMarker(group.icon, group.color, POI_OUTLINE, 'circle').then((img) => { map.addImage(`osm|${group.id}`, img.data, { pixelRatio: img.pixelRatio }); }));
   }
   for (const cat of TRAIL_CATEGORIES) {
     jobs.push(buildLineIcon(cat.icon).then((img) => { map.addImage(`trail|${cat.icon}`, img.data, { pixelRatio: img.pixelRatio }); }));
@@ -63,8 +63,9 @@ export function addOverlayLayers(map: MapLibreMap): void {
       'symbol-spacing': 900,
       'icon-image': ['get', 'icon'],
       'icon-rotation-alignment': 'viewport',
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true,
+      'icon-padding': 40,
+      'icon-allow-overlap': false,
+      'icon-ignore-placement': false,
     },
   });
 
