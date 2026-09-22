@@ -61,7 +61,8 @@ describe('names', () => {
     const tags = { name: 'Πορτάρα', 'name:en': 'Portara' };
     expect(displayName(tags)).toBe('Portara');
     expect(localName(tags)).toBe('Πορτάρα');
-    expect(displayName({ name: 'Κούρος' })).toBe('Κούρος');
+    expect(displayName({ name: 'Κούρος' })).toBe('Kouros');
+    expect(displayName({ name: 'Chora' })).toBe('Chora');
     expect(displayName({})).toBeNull();
   });
 });

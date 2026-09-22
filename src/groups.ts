@@ -49,11 +49,17 @@ export function groupForFile(fileName: string | null): Group {
 
 // ── OSM tags → group ─────────────────────────────────────────────────────────────────────────
 
+import { isGreek, romanizeGreek } from './romanize';
+
 export type Tags = Record<string, string>;
 
-/** The name to show: English when OSM has one, otherwise the local name. */
+/** The name to show: English when OSM has one, otherwise the local name romanized (Greek → Latin). */
 export function displayName(tags: Tags): string | null {
-  return tags['name:en'] || tags.int_name || tags.name || null;
+  const english = tags['name:en'] || tags.int_name;
+  if (english) return english;
+  const local = tags.name;
+  if (!local) return null;
+  return isGreek(local) ? romanizeGreek(local) : local;
 }
 
 /** The local name, for web searches (it finds more than the English one). */
