@@ -14,17 +14,17 @@ export interface Group {
 }
 
 export const GROUPS: Group[] = [
-  { id: 'caves', name: 'Caves', file: 'caves', icon: 'cave', color: '#7E57C2', osmOnly: false },
-  { id: 'water', name: 'Water', file: 'water', icon: 'waterfall', color: '#29B6F6', osmOnly: false },
-  { id: 'geology', name: 'Geology', file: 'geology', icon: 'volcano', color: '#FF7043', osmOnly: false },
+  { id: 'caves', name: 'Caves', file: 'caves', icon: 'cave', color: '#8F7FB8', osmOnly: false },
+  { id: 'water', name: 'Water', file: 'water', icon: 'waterfall', color: '#5FA3C9', osmOnly: false },
+  { id: 'geology', name: 'Geology', file: 'geology', icon: 'volcano', color: '#D3906F', osmOnly: false },
   { id: 'archaeology', name: 'Archaeology', file: 'archaeology', icon: 'column', color: '#C9A86A', osmOnly: false },
-  { id: 'fortifications', name: 'Fortifications', file: 'fortifications', icon: 'shield', color: '#E53935', osmOnly: false },
+  { id: 'fortifications', name: 'Fortifications', file: 'fortifications', icon: 'shield', color: '#C46B6B', osmOnly: false },
   { id: 'religion', name: 'Religion', file: 'religion', icon: 'place-of-worship', color: '#90A4AE', osmOnly: false },
-  { id: 'structures', name: 'Structures', file: 'structures', icon: 'archway', color: '#8D6E63', osmOnly: false },
+  { id: 'structures', name: 'Structures', file: 'structures', icon: 'archway', color: '#9B857B', osmOnly: false },
   { id: 'abandoned', name: 'Abandoned', file: 'abandoned', icon: 'ghost', color: '#9E9E9E', osmOnly: false },
-  { id: 'viewpoints', name: 'Viewpoints', file: 'viewpoints', icon: 'viewpoint', color: '#66BB6A', osmOnly: false },
-  { id: 'zoos', name: 'Zoos', file: null, icon: 'paw', color: '#EC407A', osmOnly: true },
-  { id: 'gardens', name: 'Gardens', file: null, icon: 'flower', color: '#9CCC65', osmOnly: true },
+  { id: 'viewpoints', name: 'Viewpoints', file: 'viewpoints', icon: 'viewpoint', color: '#7DA981', osmOnly: false },
+  { id: 'zoos', name: 'Zoos', file: null, icon: 'paw', color: '#C57C9B', osmOnly: true },
+  { id: 'gardens', name: 'Gardens', file: null, icon: 'flower', color: '#A6BB80', osmOnly: true },
 ];
 
 export const NO_GROUP: Group = { id: 'none', name: 'No group', file: null, icon: 'marker', color: '#BDBDBD', osmOnly: false };
