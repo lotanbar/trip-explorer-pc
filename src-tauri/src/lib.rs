@@ -246,25 +246,54 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
 
 const BROWSER_LABEL: &str = "browser";
 
-/// Runs in every page the embedded browser loads: on Google, hides the top bar (apps, sign-in,
-/// settings) so only the search itself is left.
+/// Runs in every page the embedded browser loads. On Google: hides the top bar (apps, sign-in,
+/// settings) so only the search is left, and expands the AI overview by clicking its "Show more"
+/// as soon as it appears.
 const BROWSER_INIT_SCRIPT: &str = r#"
 (function () {
   if (!/(^|\.)google\./.test(location.hostname)) return;
   var css = '#gb, #gbwa, [aria-label="Google apps"] { display: none !important; }';
-  function add() {
+  function addCss() {
     var s = document.createElement('style');
     s.textContent = css;
     (document.head || document.documentElement).appendChild(s);
   }
-  if (document.head) add(); else document.addEventListener('DOMContentLoaded', add);
+  function expand() {
+    var nodes = document.querySelectorAll('button, [role="button"]');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.dataset.teClicked) continue;
+      var label = ((n.getAttribute('aria-label') || '') + ' ' + (n.textContent || '')).trim().toLowerCase();
+      if (label.indexOf('show more') === 0 || label === 'show more' || /^show more\b/.test(label)) {
+        n.dataset.teClicked = '1';
+        n.click();
+      }
+    }
+  }
+  function start() {
+    addCss();
+    expand();
+    var timer = null;
+    new MutationObserver(function () {
+      clearTimeout(timer);
+      timer = setTimeout(expand, 300);
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+  if (document.head) start(); else document.addEventListener('DOMContentLoaded', start);
 })();
 "#;
 
-/// Width (logical px) of the browser panel, kept so a window resize can re-fit the child webview.
+/// Geometry of the browser panel (logical px), kept so a window resize can re-fit the child webview:
+/// its width, and how much of the window bottom it leaves free (the panel's status strip).
 #[derive(Default)]
 struct BrowserState {
     width: Mutex<f64>,
+    bottom_inset: Mutex<f64>,
+}
+
+fn browser_height(window: &tauri::Window, state: &BrowserState) -> Result<f64, String> {
+    let inset = *state.bottom_inset.lock().map_err(|e| e.to_string())?;
+    Ok((window_logical_height(window)? - inset).max(100.0))
 }
 
 fn browser_webview(window: &tauri::Window) -> Option<tauri::Webview> {
@@ -277,16 +306,18 @@ fn window_logical_height(window: &tauri::Window) -> Result<f64, String> {
     Ok(size.to_logical::<f64>(scale).height)
 }
 
-/// Shows `url` in the embedded browser, covering the side panel (`width` logical px, full height).
+/// Shows `url` in the embedded browser over the side panel: `width` logical px wide, from the top
+/// down to `bottom_inset` px above the window bottom (the panel's status strip stays visible).
 /// Async so it runs off the main thread: creating a child webview waits on the main thread.
 #[tauri::command]
-async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserState>, url: String, width: f64) -> Result<(), String> {
+async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserState>, url: String, width: f64, bottom_inset: f64) -> Result<(), String> {
     let url: tauri::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err(format!("Refusing to open {} in the browser", url.scheme()));
     }
     *state.width.lock().map_err(|e| e.to_string())? = width;
-    let height = window_logical_height(&window)?;
+    *state.bottom_inset.lock().map_err(|e| e.to_string())? = bottom_inset;
+    let height = browser_height(&window, &state)?;
     if let Some(webview) = browser_webview(&window) {
         webview.navigate(url).map_err(|e| e.to_string())?;
         webview.set_position(LogicalPosition::new(0.0, 0.0)).map_err(|e| e.to_string())?;
@@ -312,13 +343,14 @@ async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserStat
 
 /// Follows the side panel when it is resized (a width of 0 hides the browser).
 #[tauri::command]
-async fn browser_resize(window: tauri::Window, state: tauri::State<'_, BrowserState>, width: f64) -> Result<(), String> {
+async fn browser_resize(window: tauri::Window, state: tauri::State<'_, BrowserState>, width: f64, bottom_inset: f64) -> Result<(), String> {
     *state.width.lock().map_err(|e| e.to_string())? = width;
+    *state.bottom_inset.lock().map_err(|e| e.to_string())? = bottom_inset;
     if let Some(webview) = browser_webview(&window) {
         if width <= 0.0 {
             webview.hide().map_err(|e| e.to_string())?;
         } else {
-            let height = window_logical_height(&window)?;
+            let height = browser_height(&window, &state)?;
             webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
         }
     }
@@ -351,8 +383,9 @@ pub fn run() {
                 let handle = window.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::Resized(_) = event {
-                        if let (Some(webview), Ok(height)) = (browser_webview(&handle), window_logical_height(&handle)) {
-                            let width = *handle.state::<BrowserState>().width.lock().unwrap();
+                        let state = handle.state::<BrowserState>();
+                        if let (Some(webview), Ok(height)) = (browser_webview(&handle), browser_height(&handle, &state)) {
+                            let width = *state.width.lock().unwrap();
                             let _ = webview.set_size(LogicalSize::new(width, height));
                         }
                     }

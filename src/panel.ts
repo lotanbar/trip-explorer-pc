@@ -5,7 +5,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { isBrowserOpen } from './browser';
+import { browserBottomInset, isBrowserOpen } from './browser';
 import { saveSettings, settings } from './settings';
 
 export const PANEL_MIN_WIDTH = 340;
@@ -22,7 +22,7 @@ function apply(): void {
   const open = settings.panelOpen;
   app().classList.toggle('panel-closed', !open);
   app().style.setProperty('--panel', `${open ? panelWidth() : 0}px`);
-  if (isBrowserOpen()) invoke('browser_resize', { width: open ? panelWidth() : 0 }).catch(() => undefined);
+  if (isBrowserOpen()) invoke('browser_resize', { width: open ? panelWidth() : 0, bottomInset: browserBottomInset() }).catch(() => undefined);
 }
 
 export function openPanel(): void {
