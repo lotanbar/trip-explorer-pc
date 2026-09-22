@@ -2,6 +2,7 @@ import { Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { openMyPoi, openOsmPoi, openTrail } from './actions';
 import { closeBrowser } from './browser';
+import { closePanel, initPanel } from './panel';
 import type { FeatureCollection, Point } from 'geojson';
 import { scanTrips, cacheEvict, CACHE_TTL_MS, type TripInfo } from './backend';
 import { groupForFile } from './groups';
@@ -23,7 +24,12 @@ const DEFAULT_ZOOM = 7;
 async function main(): Promise<void> {
   await loadSettings();
   const statusMessages = new Map<string, string>();
+  initPanel();
   const sidebar = new Sidebar(document.getElementById('sidebar')!, {
+    onClose: () => {
+      closeBrowser().catch(() => undefined);
+      closePanel();
+    },
     onRootChanged: () => rescan(),
     onRefresh: () => rescan(),
     onCheckedChanged: () => renderChecked(),

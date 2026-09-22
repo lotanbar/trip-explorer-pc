@@ -19,6 +19,9 @@ export interface Settings {
   /** Trail category ids that are hidden. */
   trailsHidden: string[];
   camera: Camera | null;
+  /** Side panel: shown or closed, and its width in CSS px (null = the minimum). */
+  panelOpen: boolean;
+  panelWidth: number | null;
 }
 
 const DEFAULTS: Settings = {
@@ -29,6 +32,8 @@ const DEFAULTS: Settings = {
   trails: true,
   trailsHidden: [],
   camera: null,
+  panelOpen: true,
+  panelWidth: null,
 };
 
 export let settings: Settings = { ...DEFAULTS };

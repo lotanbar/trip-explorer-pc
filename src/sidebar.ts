@@ -12,6 +12,7 @@ import { TRAIL_CATEGORIES } from './trails';
 import { tripColor, recordingDateRange } from './recordings';
 
 export interface SidebarCallbacks {
+  onClose: () => void;
   onRootChanged: (root: string) => void;
   onRefresh: () => void;
   onCheckedChanged: () => void;
@@ -34,6 +35,7 @@ export class Sidebar {
           <div class="actions">
             <button id="pick-root" title="Choose the trips folder">Folder…</button>
             <button id="refresh" title="Re-scan the folders">Refresh</button>
+            <button id="panel-close" class="icon-button" title="Close the panel" aria-label="Close the panel">×</button>
           </div>
         </div>
         <div id="root-label" class="root-label muted">No folder chosen</div>
@@ -62,6 +64,7 @@ export class Sidebar {
 
     root.querySelector('#pick-root')!.addEventListener('click', () => this.pickRoot());
     root.querySelector('#refresh')!.addEventListener('click', () => cb.onRefresh());
+    root.querySelector('#panel-close')!.addEventListener('click', () => cb.onClose());
 
     this.buildGroupToggles();
     this.buildTrailToggles();

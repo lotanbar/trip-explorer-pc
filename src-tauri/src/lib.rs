@@ -294,6 +294,21 @@ async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserStat
     Ok(())
 }
 
+/// Follows the side panel when it is resized (a width of 0 hides the browser).
+#[tauri::command]
+async fn browser_resize(window: tauri::Window, state: tauri::State<'_, BrowserState>, width: f64) -> Result<(), String> {
+    *state.width.lock().map_err(|e| e.to_string())? = width;
+    if let Some(webview) = browser_webview(&window) {
+        if width <= 0.0 {
+            webview.hide().map_err(|e| e.to_string())?;
+        } else {
+            let height = window_logical_height(&window)?;
+            webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// Hides the embedded browser; the side panel is visible again.
 #[tauri::command]
 async fn browser_close(window: tauri::Window) -> Result<(), String> {
@@ -331,6 +346,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             browser_open,
+            browser_resize,
             browser_close,
             scan_trips,
             read_text,
