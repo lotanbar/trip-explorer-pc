@@ -39,6 +39,13 @@ export async function loadMapStyle(): Promise<StyleSpecification> {
     },
   };
 
+  // The style asks for a couple of sprite images its sprite sheet does not contain (e.g. a wood
+  // pattern); dropping the pattern lets the layer fall back to its plain fill colour.
+  for (const layer of style.layers) {
+    const paint = (layer as { paint?: Record<string, unknown> }).paint;
+    if (paint && 'fill-pattern' in paint) delete paint['fill-pattern'];
+  }
+
   const firstSymbol = style.layers.findIndex((l) => l.type === 'symbol');
   if (firstSymbol >= 0) style.layers.splice(firstSymbol, 0, hillshade);
   else style.layers.push(hillshade);
