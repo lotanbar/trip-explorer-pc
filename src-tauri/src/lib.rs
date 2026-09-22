@@ -246,13 +246,16 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
 
 const BROWSER_LABEL: &str = "browser";
 
-/// Runs in every page the embedded browser loads. On Google: hides the top bars (Google bar and
-/// the mobile header with settings / share / logo, keeping the search box).
-/// Class names on Google change, so the header is found structurally.
+/// Runs in every page the embedded browser loads. On Google it keeps only the search box and the
+/// results: hides the Google bar, the mobile header row (settings / share / logo), the result-type
+/// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, and shrinks the
+/// header wrapper to the search box so no blank band is left. Class names on Google change, so the
+/// header and tabs are found structurally; the ids used (`sfcnt`, `appbar`, `cnt`) are long-lived.
 const BROWSER_INIT_SCRIPT: &str = r#"
 (function () {
   if (!/(^|\.)google\./.test(location.hostname)) return;
-  var css = '#gb, #gbwa, [aria-label="Google apps"] { display: none !important; }';
+  var css = '#gb, #gbwa, [aria-label="Google apps"], #sfcnt, #appbar, #oFNiHe { display: none !important; }' +
+    ' #cnt { padding-top: 0 !important; }';
   function addCss() {
     var s = document.createElement('style');
     s.textContent = css;
@@ -266,7 +269,21 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     while (e.parentElement && !e.parentElement.contains(q) && e.parentElement !== document.body) e = e.parentElement;
     if (!e.contains(q) && !e.dataset.teHidden) { e.dataset.teHidden = '1'; e.style.display = 'none'; }
   }
-  function tidy() { hideHeaderRow(); }
+  // The result-type tabs: the first navigation block in the results container that holds a list.
+  function hideTabs() {
+    var nav = document.querySelector('#cnt [role="navigation"]');
+    if (nav && nav.querySelector('[role="list"]') && !nav.dataset.teHidden) { nav.dataset.teHidden = '1'; nav.style.display = 'none'; }
+  }
+  // The header wrapper has a fixed inline height sized for the (hidden) header row plus the search
+  // box; shrink it to the search box. Only written when it differs, so the observer does not loop.
+  function shrinkHeader() {
+    var form = document.getElementById('searchform');
+    var wrap = form && form.parentElement;
+    if (!wrap || !wrap.style.height) return;
+    var h = Math.max(0, Math.round(form.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top)) + 'px';
+    if (wrap.style.height !== h) wrap.style.height = h;
+  }
+  function tidy() { hideHeaderRow(); hideTabs(); shrinkHeader(); }
   function start() {
     addCss();
     tidy();
