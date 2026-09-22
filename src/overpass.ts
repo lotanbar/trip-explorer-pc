@@ -168,10 +168,14 @@ export interface StripStoreOptions<T> {
  * Keeps every element fetched so far (this session plus the cache) and fetches only what the
  * viewport still lacks. Elements are merged by key so an object that spans two strips is kept once.
  */
+/** After a failed fetch the area is left alone for this long instead of being retried on every pan. */
+const RETRY_AFTER_MS = 60_000;
+
 export class StripStore<T> {
   readonly items = new Map<string, T>();
   private covered: Bounds[] = [];
   private inFlight: Bounds[] = [];
+  private failed: { bounds: Bounds; until: number }[] = [];
   private cached: { key: string; meta: StripMeta; loaded: boolean }[] = [];
   private ready: Promise<void>;
   private generation = 0;
@@ -219,8 +223,10 @@ export class StripStore<T> {
       }
     }
 
-    const strips = uncovered(target, [...this.covered, ...this.inFlight]);
-    if (strips.length === 0) return true;
+    const now = Date.now();
+    this.failed = this.failed.filter((f) => f.until > now);
+    const strips = uncovered(target, [...this.covered, ...this.inFlight, ...this.failed.map((f) => f.bounds)]);
+    if (strips.length === 0) return this.failed.length === 0;
 
     this.inFlight.push(...strips);
     this.opt.onStatus?.(`Loading ${this.opt.namespace}…`);
@@ -240,6 +246,7 @@ export class StripStore<T> {
           );
         } catch (e) {
           allOk = false;
+          this.failed.push({ bounds: strip, until: Date.now() + RETRY_AFTER_MS });
           console.warn(`${this.opt.namespace}: fetch failed`, e);
           this.opt.onStatus?.(`${this.opt.namespace}: ${(e as Error).message}`);
         } finally {
