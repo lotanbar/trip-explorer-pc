@@ -7,14 +7,19 @@ import { isShown, type OsmPoi } from '../src/osmPois';
 const poi = (tags: Record<string, string>, name: string | null = 'X'): OsmPoi =>
   ({ id: 'n1', lat: 0, lon: 0, name, searchName: name, groupId: 'water', type: 'Spring', tags });
 
-describe('notable OSM POIs', () => {
-  it('shows only named objects with a Wikidata, Wikipedia or heritage tag', () => {
-    expect(isShown(poi({ wikidata: 'Q1' }))).toBe(true);
-    expect(isShown(poi({ wikipedia: 'el:Πορτάρα' }))).toBe(true);
-    expect(isShown(poi({ heritage: '2' }))).toBe(true);
-    expect(isShown(poi({ 'name:en': 'Portara' }))).toBe(true);
-    expect(isShown(poi({ description: 'a spring' }))).toBe(true);
-    expect(isShown(poi({}))).toBe(false);
-    expect(isShown(poi({ wikidata: 'Q1' }, null))).toBe(false);
+describe('which OSM POIs are shown', () => {
+  it('shows any named object', () => {
+    expect(isShown(poi({ natural: 'spring' }))).toBe(true);
+    expect(isShown(poi({ historic: 'castle' }))).toBe(true);
+    expect(isShown(poi({ natural: 'spring' }, null))).toBe(false);
+  });
+
+  it('needs a notable tag for places of worship and cemeteries', () => {
+    expect(isShown(poi({ amenity: 'place_of_worship' }))).toBe(false);
+    expect(isShown(poi({ amenity: 'place_of_worship', wikidata: 'Q1' }))).toBe(true);
+    expect(isShown(poi({ amenity: 'place_of_worship', 'name:en': 'Panagia Drosiani' }))).toBe(true);
+    expect(isShown(poi({ landuse: 'cemetery' }))).toBe(false);
+    expect(isShown(poi({ amenity: 'grave_yard', heritage: '2' }))).toBe(true);
+    expect(isShown(poi({ amenity: 'monastery' }))).toBe(true);
   });
 });
