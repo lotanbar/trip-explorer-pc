@@ -12,6 +12,8 @@ describe('notable OSM POIs', () => {
     expect(isShown(poi({ wikidata: 'Q1' }))).toBe(true);
     expect(isShown(poi({ wikipedia: 'el:Πορτάρα' }))).toBe(true);
     expect(isShown(poi({ heritage: '2' }))).toBe(true);
+    expect(isShown(poi({ 'name:en': 'Portara' }))).toBe(true);
+    expect(isShown(poi({ description: 'a spring' }))).toBe(true);
     expect(isShown(poi({}))).toBe(false);
     expect(isShown(poi({ wikidata: 'Q1' }, null))).toBe(false);
   });

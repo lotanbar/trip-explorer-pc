@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     sidebar.setStatus([...statusMessages.values()].join(' · ') || null);
   };
 
-  for (const ns of ['osm-pois-v5', 'trails-v2', 'roads']) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
+  for (const ns of ['osm-pois-v6', 'trails-v2', 'roads']) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
 
   let style;
   try {
