@@ -43,6 +43,7 @@ body {
 }
 
 #sidebar {
+  grid-column: 1;
   background: var(--surface);
   display: flex;
   flex-direction: column;
@@ -51,6 +52,7 @@ body {
 }
 
 #panel-handle {
+  grid-column: 2;
   cursor: col-resize;
   background: var(--border);
   touch-action: none;
@@ -70,6 +72,7 @@ body {
 }
 
 #map {
+  grid-column: 3;
   position: relative;
   background: #0c0c0c;
   min-width: 0;
