@@ -26,7 +26,7 @@ export const MY_POI_OUTLINE = '#FFC107';
 export const OSM_POI_OUTLINE = '#FFFFFF';
 export const TRAIL_COLOR = '#BDBDBD';
 /** Icons along trail lines are brighter than the line so they stand out. */
-export const TRAIL_ICON_COLOR = '#FFFFFF';
+export const TRAIL_ICON_COLOR = '#E0E0E0';
 
 function svgToImage(svg: string, fill: string): Promise<HTMLImageElement> {
   const styled = svg.replace(
