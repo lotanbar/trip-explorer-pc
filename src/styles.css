@@ -1,0 +1,277 @@
+:root {
+  --bg: #121212;
+  --surface: #1a1a1a;
+  --surface-2: #242424;
+  --border: #2e2e2e;
+  --text: #e0e0e0;
+  --muted: #8a8a8a;
+  --primary: #2196f3;
+  --amber: #ffc107;
+  --trail: #bdbdbd;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: 100vh;
+}
+
+#sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#map {
+  position: relative;
+  background: #0c0c0c;
+}
+
+.panel-section {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.panel-section:first-child {
+  flex: 1 1 auto;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+button {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--primary);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.root-label {
+  font-size: 12px;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.tree .node {
+  margin-left: 0;
+}
+
+.tree .children {
+  margin-left: 18px;
+}
+
+.tree .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tree .row:hover {
+  background: var(--surface-2);
+}
+
+.tree .label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.tree .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-trip > .row .name {
+  font-weight: 600;
+}
+
+.node-folder > .row .name,
+.node-recording > .row .name {
+  color: var(--muted);
+}
+
+.badge {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--amber);
+  border: 1px solid var(--amber);
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.poi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.poi-icon svg {
+  width: 10px;
+  height: 10px;
+  fill: #fff;
+}
+
+.trail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.trail-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: var(--trail);
+}
+
+.line-cable,
+.line-rail {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: var(--trail);
+}
+
+.line-rail {
+  height: 6px;
+  background: repeating-linear-gradient(90deg, var(--trail) 0 2px, transparent 2px 5px);
+}
+
+.toggle-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+}
+
+.toggle,
+.master {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 2px 0;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.toggle > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toggle .osm-only {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+.status {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 26px;
+  border-top: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status.error {
+  color: #ef5350;
+  white-space: normal;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  background: rgba(20, 20, 20, 0.94);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: pre;
+  max-width: 320px;
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgba(20, 20, 20, 0.7) !important;
+  color: var(--muted);
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--muted);
+}
