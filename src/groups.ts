@@ -51,6 +51,16 @@ export function groupForFile(fileName: string | null): Group {
 
 export type Tags = Record<string, string>;
 
+/** The name to show: English when OSM has one, otherwise the local name. */
+export function displayName(tags: Tags): string | null {
+  return tags['name:en'] || tags.int_name || tags.name || null;
+}
+
+/** The local name, for web searches (it finds more than the English one). */
+export function localName(tags: Tags): string | null {
+  return tags.name || tags['name:en'] || null;
+}
+
 export interface OsmMatch {
   group: Group;
   /** Human-readable type for the hover, e.g. "Spring", "Archaeological site (tumulus)". */

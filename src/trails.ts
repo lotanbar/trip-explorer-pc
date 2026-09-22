@@ -7,7 +7,7 @@
 import type { FeatureCollection, LineString } from 'geojson';
 import { StripStore } from './overpass';
 import { haversineMeters } from './track-cleanup/src/geo';
-import type { Tags } from './groups';
+import { displayName, localName, type Tags } from './groups';
 
 export type TrailCategory = 'hiking' | 'cycling' | 'riding' | 'winter' | 'via_ferrata' | 'cable' | 'rail' | 'historic';
 
@@ -38,7 +38,10 @@ export interface TrailLine {
   /** Unique per piece: "w123" or "r45:7" (relation member index within the fetched strip). */
   id: string;
   category: TrailCategory;
+  /** Shown on hover: English when available. */
   name: string | null;
+  /** Used for web searches. */
+  searchName: string | null;
   type: string;
   from: string | null;
   to: string | null;
@@ -130,11 +133,12 @@ function runs(geometry: ({ lat: number; lon: number } | null)[] | undefined): [n
 const SIGNATURE_KEYS = ['railway', 'abandoned:railway', 'razed:railway', 'abandoned:waterway', 'disused:waterway', 'historic', 'military', 'aerialway', 'name', 'ref'];
 
 function makeLine(id: string, tags: Tags, cls: { category: TrailCategory; type: string }, coords: [number, number][]): TrailLine {
-  const name = tags.name || tags['name:en'] || tags.ref || null;
+  const name = displayName(tags) || tags.ref || null;
   return {
     id,
     category: cls.category,
     name,
+    searchName: localName(tags) || tags.ref || null,
     type: cls.type,
     from: tags.from ?? null,
     to: tags.to ?? null,
@@ -166,7 +170,7 @@ function parse(json: { elements?: unknown[] }): TrailLine[] {
 }
 
 export const trailStore = new StripStore<TrailLine>({
-  namespace: 'trails',
+  namespace: 'trails-v2',
   buildQuery,
   parse,
   keyOf: (l) => l.id,
@@ -312,6 +316,7 @@ export function trailsGeoJson(visibleCategories: Set<string>): FeatureCollection
         icon: `trail|${info.icon}`,
         hover: trailHover(line),
         name: line.name,
+        searchName: line.searchName ?? line.name,
         website: line.website,
       },
     });

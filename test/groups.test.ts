@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupForFile, groupForOsmTags, isTrailObject, NO_GROUP } from '../src/groups';
+import { displayName, groupForFile, groupForOsmTags, isTrailObject, localName, NO_GROUP } from '../src/groups';
 
 describe('my POI groups', () => {
   it('reads the group from the file name, unknown or missing means No group', () => {
@@ -53,5 +53,15 @@ describe('OSM tag mapping', () => {
     expect(isTrailObject({ 'abandoned:railway': 'rail' })).toBe(true);
     expect(isTrailObject({ 'disused:waterway': 'canal' })).toBe(true);
     expect(isTrailObject({ 'disused:shop': 'yes' })).toBe(false);
+  });
+});
+
+describe('names', () => {
+  it('shows English when OSM has it and searches with the local name', () => {
+    const tags = { name: 'Πορτάρα', 'name:en': 'Portara' };
+    expect(displayName(tags)).toBe('Portara');
+    expect(localName(tags)).toBe('Πορτάρα');
+    expect(displayName({ name: 'Κούρος' })).toBe('Κούρος');
+    expect(displayName({})).toBeNull();
   });
 });

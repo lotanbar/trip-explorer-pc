@@ -3,14 +3,17 @@
  */
 
 import type { FeatureCollection, Point } from 'geojson';
-import { groupById, groupForOsmTags, isTrailObject, type Tags } from './groups';
+import { displayName, groupById, groupForOsmTags, isTrailObject, localName, type Tags } from './groups';
 import { StripStore } from './overpass';
 
 export interface OsmPoi {
   id: string;
   lat: number;
   lon: number;
+  /** Shown on the map: English when available. */
   name: string | null;
+  /** Used for web searches. */
+  searchName: string | null;
   groupId: string;
   type: string;
   tags: Tags;
@@ -62,8 +65,8 @@ function parse(json: { elements?: unknown[] }): OsmPoi[] {
     if (isTrailObject(tags)) continue;
     const match = groupForOsmTags(tags);
     if (!match) continue;
-    const name = tags.name || tags['name:en'] || null;
-    const poi = { id: `${el.type[0]}${el.id}`, lat, lon, name, groupId: match.group.id, type: match.type, tags };
+    const name = displayName(tags);
+    const poi = { id: `${el.type[0]}${el.id}`, lat, lon, name, searchName: localName(tags), groupId: match.group.id, type: match.type, tags };
     if (isShown(poi)) out.push(poi);
   }
   return out;
@@ -75,7 +78,7 @@ export function isShown(poi: OsmPoi): boolean {
 }
 
 export const osmPoiStore = new StripStore<OsmPoi>({
-  namespace: 'osm-pois-v3', // v3: only named objects are fetched and stored
+  namespace: 'osm-pois-v4', // v4: English display name and local search name stored per POI
   buildQuery,
   parse,
   keyOf: (p) => p.id,
@@ -99,6 +102,7 @@ export function osmPoisGeoJson(visibleGroups: Set<string>, zoom: number): Featur
         icon: `osm|${poi.groupId}`,
         hover: osmPoiHover(poi),
         name: poi.name,
+        searchName: poi.searchName ?? poi.name,
         type: poi.type,
       },
     });

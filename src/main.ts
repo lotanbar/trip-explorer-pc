@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     sidebar.setStatus([...statusMessages.values()].join(' · ') || null);
   };
 
-  for (const ns of ['osm-pois-v3', 'trails', 'roads']) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
+  for (const ns of ['osm-pois-v4', 'trails-v2', 'roads']) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
 
   let style;
   try {
@@ -241,11 +241,11 @@ async function main(): Promise<void> {
         break;
       case LAYERS.osmPois: {
         const [lon, lat] = (top.geometry as Point).coordinates;
-        openOsmPoi(props.name ? String(props.name) : null, lat, lon).catch(report);
+        openOsmPoi(props.searchName ? String(props.searchName) : null, lat, lon).catch(report);
         break;
       }
       case LAYERS.trails:
-        openTrail(props.name ? String(props.name) : null, props.website ? String(props.website) : null).catch(report);
+        openTrail(props.searchName ? String(props.searchName) : null, props.website ? String(props.website) : null).catch(report);
         break;
     }
   });

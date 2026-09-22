@@ -246,6 +246,21 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
 
 const BROWSER_LABEL: &str = "browser";
 
+/// Runs in every page the embedded browser loads: on Google, hides the top bar (apps, sign-in,
+/// settings) so only the search itself is left.
+const BROWSER_INIT_SCRIPT: &str = r#"
+(function () {
+  if (!/(^|\.)google\./.test(location.hostname)) return;
+  var css = '#gb, #gbwa, [aria-label="Google apps"] { display: none !important; }';
+  function add() {
+    var s = document.createElement('style');
+    s.textContent = css;
+    (document.head || document.documentElement).appendChild(s);
+  }
+  if (document.head) add(); else document.addEventListener('DOMContentLoaded', add);
+})();
+"#;
+
 /// Width (logical px) of the browser panel, kept so a window resize can re-fit the child webview.
 #[derive(Default)]
 struct BrowserState {
@@ -280,7 +295,8 @@ async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserStat
         webview.set_focus().map_err(|e| e.to_string())?;
     } else {
         #[allow(unused_mut)]
-        let mut builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(url));
+        let mut builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(url))
+            .initialization_script(BROWSER_INIT_SCRIPT);
         // On Windows every webview sharing the user-data folder must use the same browser
         // arguments as the main window, or WebView2 refuses to start the child.
         #[cfg(windows)]
