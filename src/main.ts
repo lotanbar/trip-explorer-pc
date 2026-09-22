@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     sidebar.setStatus([...statusMessages.values()].join(' · ') || null);
   };
 
-  for (const ns of ['osm-pois', 'trails', 'roads']) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
+  for (const ns of ['osm-pois-v2', 'trails', 'roads']) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
 
   let style;
   try {
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
       setData(map, SRC_OSM_POIS, { type: 'FeatureCollection', features: [] });
       return;
     }
-    setData(map, SRC_OSM_POIS, osmPoisGeoJson(visibleGroups()));
+    setData(map, SRC_OSM_POIS, osmPoisGeoJson(visibleGroups(), map.getZoom()));
   }
 
   function visibleTrailCategories(): Set<string> {

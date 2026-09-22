@@ -11,6 +11,8 @@ export interface Group {
   icon: string;
   color: string;
   osmOnly: boolean;
+  /** OSM POIs of this group are shown only from this zoom (11 is the general gate). */
+  osmMinZoom?: number;
 }
 
 export const GROUPS: Group[] = [
@@ -19,7 +21,7 @@ export const GROUPS: Group[] = [
   { id: 'geology', name: 'Geology', file: 'geology', icon: 'volcano', color: '#FF7043', osmOnly: false },
   { id: 'archaeology', name: 'Archaeology', file: 'archaeology', icon: 'column', color: '#D4A017', osmOnly: false },
   { id: 'fortifications', name: 'Fortifications', file: 'fortifications', icon: 'shield', color: '#E53935', osmOnly: false },
-  { id: 'religion', name: 'Religion', file: 'religion', icon: 'place-of-worship', color: '#FDD835', osmOnly: false },
+  { id: 'religion', name: 'Religion', file: 'religion', icon: 'place-of-worship', color: '#FDD835', osmOnly: false, osmMinZoom: 13 },
   { id: 'structures', name: 'Structures', file: 'structures', icon: 'archway', color: '#8D6E63', osmOnly: false },
   { id: 'abandoned', name: 'Abandoned', file: 'abandoned', icon: 'ghost', color: '#9E9E9E', osmOnly: false },
   { id: 'viewpoints', name: 'Viewpoints', file: 'viewpoints', icon: 'viewpoint', color: '#66BB6A', osmOnly: false },

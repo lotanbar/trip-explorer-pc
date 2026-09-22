@@ -3,7 +3,7 @@
  */
 
 import type { FeatureCollection, Point } from 'geojson';
-import { groupForOsmTags, isTrailObject, type Tags } from './groups';
+import { groupById, groupForOsmTags, isTrailObject, type Tags } from './groups';
 import { StripStore } from './overpass';
 
 export interface OsmPoi {
@@ -63,15 +63,19 @@ function parse(json: { elements?: unknown[] }): OsmPoi[] {
     const match = groupForOsmTags(tags);
     if (!match) continue;
     const name = tags.name || tags['name:en'] || null;
-    // Every chapel in the countryside is tagged; unnamed ones would swamp the map.
-    if (match.group.id === 'religion' && !name) continue;
-    out.push({ id: `${el.type[0]}${el.id}`, lat, lon, name, groupId: match.group.id, type: match.type, tags });
+    const poi = { id: `${el.type[0]}${el.id}`, lat, lon, name, groupId: match.group.id, type: match.type, tags };
+    if (isShown(poi)) out.push(poi);
   }
   return out;
 }
 
+/** Every chapel in the countryside is tagged; unnamed places of worship would swamp the map. */
+export function isShown(poi: OsmPoi): boolean {
+  return !(poi.groupId === 'religion' && !poi.name);
+}
+
 export const osmPoiStore = new StripStore<OsmPoi>({
-  namespace: 'osm-pois',
+  namespace: 'osm-pois-v2', // v2: unnamed places of worship are no longer stored
   buildQuery,
   parse,
   keyOf: (p) => p.id,
@@ -81,10 +85,11 @@ export function osmPoiHover(poi: OsmPoi): string {
   return poi.name ?? `${poi.type} (unnamed)`;
 }
 
-export function osmPoisGeoJson(visibleGroups: Set<string>): FeatureCollection<Point> {
+export function osmPoisGeoJson(visibleGroups: Set<string>, zoom: number): FeatureCollection<Point> {
   const features: FeatureCollection<Point>['features'] = [];
   for (const poi of osmPoiStore.items.values()) {
-    if (!visibleGroups.has(poi.groupId)) continue;
+    if (!visibleGroups.has(poi.groupId) || !isShown(poi)) continue;
+    if (zoom < (groupById(poi.groupId).osmMinZoom ?? OSM_POI_MIN_ZOOM)) continue;
     features.push({
       type: 'Feature',
       id: undefined,
