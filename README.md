@@ -34,6 +34,7 @@ Deviations from the spec (agreed on 2026-09-22):
 - Clicking an OSM POI or a trail opens the search / website in an embedded browser laid over the side panel
   (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
   empty spot on the map brings the panel back.
+- All trail categories use the same dotted grey line; only the repeated icon differs (no crossbar / tick patterns).
 - No zoom buttons, scale bar or attribution control on the map: pinch / ctrl+scroll zoom, credit line in the panel footer.
 
 Settings live in `%APPDATA%\com.lotanbar.tripexplorer\settings.json` (Windows) or

@@ -111,19 +111,6 @@ export async function buildLineIcon(icon: string, cssSize = 16): Promise<MarkerI
   return { data: ctx.getImageData(0, 0, s, s), pixelRatio: PIXEL_RATIO };
 }
 
-/** A vertical bar; drawn with map-aligned rotation it becomes a crossbar / tick across a line. */
-export function buildBar(cssHeight: number, cssWidth = 1.5): MarkerImage {
-  const w = Math.ceil(cssWidth * PIXEL_RATIO) + 2;
-  const h = Math.ceil(cssHeight * PIXEL_RATIO);
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = TRAIL_COLOR;
-  ctx.fillRect((w - cssWidth * PIXEL_RATIO) / 2, 0, cssWidth * PIXEL_RATIO, h);
-  return { data: ctx.getImageData(0, 0, w, h), pixelRatio: PIXEL_RATIO };
-}
-
 function withAlpha(hex: string, alpha: number): string {
   const n = parseInt(hex.replace('#', ''), 16);
   const r = (n >> 16) & 255;

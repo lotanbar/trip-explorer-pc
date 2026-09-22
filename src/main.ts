@@ -197,7 +197,7 @@ async function main(): Promise<void> {
 
   // ── Hover and click ──
 
-  const hoverLayers = [LAYERS.myPois, LAYERS.osmPois, LAYERS.recordings, LAYERS.recordingsIncomplete, LAYERS.trailsDotted, LAYERS.trailsCable, LAYERS.trailsRail];
+  const hoverLayers = [LAYERS.myPois, LAYERS.osmPois, LAYERS.recordings, LAYERS.recordingsIncomplete, LAYERS.trails];
 
   map.on('mousemove', (e: MapMouseEvent) => {
     const features = map.queryRenderedFeatures(
@@ -237,9 +237,7 @@ async function main(): Promise<void> {
         openOsmPoi(props.name ? String(props.name) : null, lat, lon).catch(report);
         break;
       }
-      case LAYERS.trailsDotted:
-      case LAYERS.trailsCable:
-      case LAYERS.trailsRail:
+      case LAYERS.trails:
         openTrail(props.name ? String(props.name) : null, props.website ? String(props.website) : null).catch(report);
         break;
     }

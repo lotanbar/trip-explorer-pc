@@ -14,22 +14,21 @@ export type TrailCategory = 'hiking' | 'cycling' | 'riding' | 'winter' | 'via_fe
 export interface TrailCategoryInfo {
   id: TrailCategory;
   name: string;
-  /** Line look: dotted with a repeating icon, or a solid/ticked line. */
-  pattern: 'dotted' | 'cable' | 'rail';
-  icon?: string;
+  /** All lines look the same (dotted, light grey); the icon repeated along the line tells them apart. */
+  icon: string;
   /** Categories whose joined lines must be at least 500 m long to show. */
   minLengthM: number;
 }
 
 export const TRAIL_CATEGORIES: TrailCategoryInfo[] = [
-  { id: 'hiking', name: 'Hiking', pattern: 'dotted', icon: 'hiker', minLengthM: 0 },
-  { id: 'cycling', name: 'Cycling', pattern: 'dotted', icon: 'bicycle', minLengthM: 0 },
-  { id: 'riding', name: 'Riding', pattern: 'dotted', icon: 'horseshoe', minLengthM: 0 },
-  { id: 'winter', name: 'Winter', pattern: 'dotted', icon: 'snow', minLengthM: 0 },
-  { id: 'via_ferrata', name: 'Via ferratas', pattern: 'dotted', icon: 'carabiner', minLengthM: 0 },
-  { id: 'cable', name: 'Cable cars and lifts', pattern: 'cable', minLengthM: 500 },
-  { id: 'rail', name: 'Old railways and canals', pattern: 'rail', minLengthM: 500 },
-  { id: 'historic', name: 'Historic', pattern: 'dotted', icon: 'column', minLengthM: 500 },
+  { id: 'hiking', name: 'Hiking', icon: 'hiker', minLengthM: 0 },
+  { id: 'cycling', name: 'Cycling', icon: 'bicycle', minLengthM: 0 },
+  { id: 'riding', name: 'Riding', icon: 'horseshoe', minLengthM: 0 },
+  { id: 'winter', name: 'Winter', icon: 'snow', minLengthM: 0 },
+  { id: 'via_ferrata', name: 'Via ferratas', icon: 'carabiner', minLengthM: 0 },
+  { id: 'cable', name: 'Cable cars and lifts', icon: 'gondola', minLengthM: 500 },
+  { id: 'rail', name: 'Old railways and canals', icon: 'rail', minLengthM: 500 },
+  { id: 'historic', name: 'Historic', icon: 'column', minLengthM: 500 },
 ];
 
 export const TRAILS_MIN_ZOOM = 11;
@@ -256,8 +255,7 @@ export function trailsGeoJson(visibleCategories: Set<string>): FeatureCollection
       properties: {
         id: line.id,
         category: line.category,
-        pattern: info.pattern,
-        icon: info.icon ? `trail|${info.icon}` : null,
+        icon: `trail|${info.icon}`,
         hover: trailHover(line),
         name: line.name,
         website: line.website,

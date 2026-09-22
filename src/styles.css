@@ -196,19 +196,6 @@ button:hover {
   fill: var(--trail);
 }
 
-.line-cable,
-.line-rail {
-  display: block;
-  width: 16px;
-  height: 2px;
-  background: var(--trail);
-}
-
-.line-rail {
-  height: 6px;
-  background: repeating-linear-gradient(90deg, var(--trail) 0 2px, transparent 2px 5px);
-}
-
 .toggle-list {
   display: grid;
   grid-template-columns: 1fr 1fr;

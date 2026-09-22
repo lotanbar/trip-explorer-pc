@@ -240,7 +240,7 @@ export class Sidebar {
       row.appendChild(box);
       const icon = document.createElement('span');
       icon.className = 'trail-icon';
-      icon.innerHTML = cat.icon ? iconSvg(cat.icon) ?? '' : cat.pattern === 'cable' ? '<i class="line-cable"></i>' : '<i class="line-rail"></i>';
+      icon.innerHTML = iconSvg(cat.icon) ?? '';
       row.appendChild(icon);
       const name = document.createElement('span');
       name.textContent = cat.name;
