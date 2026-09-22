@@ -28,8 +28,9 @@ export function installMapGestures(map: MapLibreMap, mapEl: HTMLElement): void {
     } else if (isMouseWheel(e)) {
       map.zoomTo(map.getZoom() - Math.sign(dy) * WHEEL_NOTCH_ZOOM, { around: map.unproject(point), duration: 200 });
     } else {
-      // Content follows the fingers, as when dragging with the mouse.
-      map.panBy([-e.deltaX, -dy], { animate: false });
+      // Content follows the fingers, as when dragging with the mouse (Windows reports the finger
+      // movement as a scroll in the opposite direction, hence no sign flip here).
+      map.panBy([e.deltaX, dy], { animate: false });
     }
   }, { passive: false });
 }
