@@ -12,6 +12,15 @@ const TERRAIN_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{
 
 export const HILLSHADE_LAYER_ID = 'terrain-hillshade';
 
+/** Text colour for place labels (cities, towns, villages, islands ...): near white for legibility. */
+const PLACE_LABEL_COLOR = '#F4F6F8';
+const PLACE_LABEL_HALO = 'rgba(12, 16, 32, 0.85)';
+
+/** Ids of the base style's place-label layers (the ones the user can click). */
+export function placeLabelLayerIds(style: StyleSpecification): string[] {
+  return style.layers.filter((l) => l.type === 'symbol' && l['source-layer'] === 'place').map((l) => l.id);
+}
+
 export async function loadMapStyle(): Promise<StyleSpecification> {
   const res = await fetch(BASE_STYLE_URL);
   if (!res.ok) throw new Error(`Map style: HTTP ${res.status}`);
@@ -44,6 +53,11 @@ export async function loadMapStyle(): Promise<StyleSpecification> {
   for (const layer of style.layers) {
     const paint = (layer as { paint?: Record<string, unknown> }).paint;
     if (paint && 'fill-pattern' in paint) delete paint['fill-pattern'];
+  }
+
+  for (const id of placeLabelLayerIds(style)) {
+    const layer = style.layers.find((l) => l.id === id) as { paint?: Record<string, unknown> };
+    layer.paint = { ...layer.paint, 'text-color': PLACE_LABEL_COLOR, 'text-halo-color': PLACE_LABEL_HALO, 'text-halo-width': 1.4 };
   }
 
   const firstSymbol = style.layers.findIndex((l) => l.type === 'symbol');

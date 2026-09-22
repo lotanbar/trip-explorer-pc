@@ -1,6 +1,6 @@
 import { Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { openMyPoi, openOsmPoi, openTrail } from './actions';
+import { openMyPoi, openOsmPoi, openPlace, openTrail } from './actions';
 import { browserHistory, closeBrowser, isBrowserOpen } from './browser';
 import { closePanel, initPanel } from './panel';
 import { installMapGestures } from './gestures';
@@ -8,7 +8,7 @@ import type { FeatureCollection, Point } from 'geojson';
 import { scanTrips, cacheEvict, CACHE_TTL_MS, type TripInfo } from './backend';
 import { groupForFile } from './groups';
 import { addMarkerImages, addOverlayLayers, LAYERS, lastData, setData, SRC_MY_POIS, SRC_OSM_POIS, SRC_RECORDINGS, SRC_TRAILS } from './mapLayers';
-import { loadMapStyle } from './mapStyle';
+import { loadMapStyle, placeLabelLayerIds } from './mapStyle';
 import { osmPoiStore, osmPoisGeoJson, OSM_POI_MIN_ZOOM } from './osmPois';
 import { atLeastKm, expanded, type Bounds } from './overpass';
 import { forgetRecordings, loadRecording, recordingFeature } from './recordings';
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
   const tooltip = new Tooltip(mapEl);
-  if (import.meta.env.DEV) (window as unknown as { __te: unknown }).__te = { map, settings, lastData, actions: { openMyPoi, openOsmPoi, openTrail } };
+  if (import.meta.env.DEV) (window as unknown as { __te: unknown }).__te = { map, settings, lastData, actions: { openMyPoi, openOsmPoi, openPlace, openTrail } };
 
   // The base style references a few sprite images it does not ship; blank them instead of warning.
   map.on('styleimagemissing', (e: { id: string }) => {
@@ -204,7 +204,13 @@ async function main(): Promise<void> {
 
   // ── Hover and click ──
 
-  const hoverLayers = [LAYERS.myPois, LAYERS.osmPois, LAYERS.recordings, LAYERS.recordingsIncomplete, LAYERS.trails];
+  const placeLayers = placeLabelLayerIds(map.getStyle());
+  const hoverLayers = [LAYERS.myPois, LAYERS.osmPois, LAYERS.recordings, LAYERS.recordingsIncomplete, LAYERS.trails, ...placeLayers];
+  const isPlace = (layerId: string) => placeLayers.includes(layerId);
+  /** Local name of a base-map place label (what the search uses); English shown on hover. */
+  const placeLocalName = (props: Record<string, unknown>) => (props.name ?? props['name:latin'] ?? null) as string | null;
+  const placeHover = (props: Record<string, unknown>) =>
+    String(props['name:en'] ?? props['name:latin'] ?? props.name ?? '');
 
   map.on('mousemove', (e: MapMouseEvent) => {
     const features = map.queryRenderedFeatures(
@@ -217,7 +223,8 @@ async function main(): Promise<void> {
       map.getCanvas().style.cursor = '';
       return;
     }
-    tooltip.show(String(top.properties?.hover ?? ''), e.point.x, e.point.y);
+    const props = top.properties ?? {};
+    tooltip.show(isPlace(top.layer.id) ? placeHover(props) : String(props.hover ?? ''), e.point.x, e.point.y);
     map.getCanvas().style.cursor = 'pointer';
   });
   map.on('mouseout', () => tooltip.hide());
@@ -247,6 +254,8 @@ async function main(): Promise<void> {
       case LAYERS.trails:
         openTrail(props.searchName ? String(props.searchName) : null, props.website ? String(props.website) : null).catch(report);
         break;
+      default:
+        if (isPlace(top.layer.id)) openPlace(placeLocalName(props), e.lngLat.lat, e.lngLat.lng).catch(report);
     }
   });
 

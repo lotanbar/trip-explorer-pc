@@ -32,6 +32,7 @@ Deviations from the spec (agreed on 2026-09-22):
 
 - Only named OSM POIs are fetched, and places of worship / cemeteries additionally need a notable tag (`wikidata`, `wikipedia`, `heritage`, `website`, `image`, `wikimedia_commons`, `description` or `name:en`); every countryside chapel is tagged and they swamped the map.
 - Clicking an OSM POI or a trail opens the search / website in an embedded browser laid over the side panel
+- Place labels on the base map (cities, villages, islands ...) are drawn near-white and are clickable: they open the same search as a POI. Group colours are muted versions of the spec palette.
   (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
   empty spot on the map brings the panel back.
 - All trail categories use the same plain grey line; only the repeated icon differs (no dots, crossbars or ticks).

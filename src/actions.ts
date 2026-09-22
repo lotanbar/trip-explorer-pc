@@ -57,6 +57,14 @@ export async function openOsmPoi(name: string | null, lat: number, lon: number):
   await openInBrowser(searchUrl(poiSearchQuery(name, place)));
 }
 
+/** A place label on the base map (city, village, island ...): searched like a POI, by its local name. */
+export async function openPlace(name: string | null, lat: number, lon: number): Promise<void> {
+  if (!name) return;
+  const place = await lookupPlace(lat, lon);
+  const query = place && place.toLowerCase() !== name.toLowerCase() ? poiSearchQuery(name, place) : `${name} info english`;
+  await openInBrowser(searchUrl(query));
+}
+
 /** The route's website if it has one, otherwise a search for the name. Unnamed lines do nothing. */
 export async function openTrail(name: string | null, website: string | null): Promise<void> {
   if (website) await openInBrowser(website);
