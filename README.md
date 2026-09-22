@@ -28,5 +28,13 @@ Needs Node, Rust (MSVC toolchain on Windows) and the WebView2 runtime (Windows) 
 | `src/track-cleanup/` | The cleanup module, copied as-is from the reference repo's `track-cleanup` branch (`npm test` inside it) |
 | `src/icons/` | Bundled SVG icons (Maki, Temaki or hand-drawn) |
 
+Deviations from the spec (agreed on 2026-09-22):
+
+- OSM places of worship without a name are not shown (every countryside chapel is tagged and they swamped the map).
+- Clicking an OSM POI or a trail opens the search / website in an embedded browser laid over the side panel
+  (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
+  empty spot on the map brings the panel back.
+- No zoom buttons, scale bar or attribution control on the map: pinch / ctrl+scroll zoom, credit line in the panel footer.
+
 Settings live in `%APPDATA%\com.lotanbar.tripexplorer\settings.json` (Windows) or
 `$XDG_CONFIG_HOME/com.lotanbar.tripexplorer` (Linux); the Overpass cache in the matching cache folder.

@@ -5,7 +5,8 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
+use std::sync::Mutex;
+use tauri::{LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl, WindowEvent};
 
 #[derive(Serialize)]
 struct Recording {
@@ -241,6 +242,67 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
     Ok(removed)
 }
 
+// ── Embedded browser: a child webview laid over the side panel ────────────────────────────────
+
+const BROWSER_LABEL: &str = "browser";
+
+/// Width (logical px) of the browser panel, kept so a window resize can re-fit the child webview.
+#[derive(Default)]
+struct BrowserState {
+    width: Mutex<f64>,
+}
+
+fn browser_webview(window: &tauri::Window) -> Option<tauri::Webview> {
+    window.webviews().into_iter().find(|w| w.label() == BROWSER_LABEL)
+}
+
+fn window_logical_height(window: &tauri::Window) -> Result<f64, String> {
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let size = window.inner_size().map_err(|e| e.to_string())?;
+    Ok(size.to_logical::<f64>(scale).height)
+}
+
+/// Shows `url` in the embedded browser, covering the side panel (`width` logical px, full height).
+/// Async so it runs off the main thread: creating a child webview waits on the main thread.
+#[tauri::command]
+async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserState>, url: String, width: f64) -> Result<(), String> {
+    let url: tauri::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!("Refusing to open {} in the browser", url.scheme()));
+    }
+    *state.width.lock().map_err(|e| e.to_string())? = width;
+    let height = window_logical_height(&window)?;
+    if let Some(webview) = browser_webview(&window) {
+        webview.navigate(url).map_err(|e| e.to_string())?;
+        webview.set_position(LogicalPosition::new(0.0, 0.0)).map_err(|e| e.to_string())?;
+        webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+        webview.show().map_err(|e| e.to_string())?;
+        webview.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        #[allow(unused_mut)]
+        let mut builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(url));
+        // On Windows every webview sharing the user-data folder must use the same browser
+        // arguments as the main window, or WebView2 refuses to start the child.
+        #[cfg(windows)]
+        if let Some(args) = window.config().app.windows.first().and_then(|w| w.additional_browser_args.clone()) {
+            builder = builder.additional_browser_args(&args);
+        }
+        window
+            .add_child(builder, LogicalPosition::new(0.0, 0.0), LogicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Hides the embedded browser; the side panel is visible again.
+#[tauri::command]
+async fn browser_close(window: tauri::Window) -> Result<(), String> {
+    if let Some(webview) = browser_webview(&window) {
+        webview.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -251,7 +313,25 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(BrowserState::default())
+        .setup(|app| {
+            // Keep the embedded browser fitted to the panel when the window is resized.
+            if let Some(window) = app.get_window("main") {
+                let handle = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::Resized(_) = event {
+                        if let (Some(webview), Ok(height)) = (browser_webview(&handle), window_logical_height(&handle)) {
+                            let width = *handle.state::<BrowserState>().width.lock().unwrap();
+                            let _ = webview.set_size(LogicalSize::new(width, height));
+                        }
+                    }
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
+            browser_open,
+            browser_close,
             scan_trips,
             read_text,
             load_settings,

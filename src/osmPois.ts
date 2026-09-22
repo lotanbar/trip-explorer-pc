@@ -63,6 +63,8 @@ function parse(json: { elements?: unknown[] }): OsmPoi[] {
     const match = groupForOsmTags(tags);
     if (!match) continue;
     const name = tags.name || tags['name:en'] || null;
+    // Every chapel in the countryside is tagged; unnamed ones would swamp the map.
+    if (match.group.id === 'religion' && !name) continue;
     out.push({ id: `${el.type[0]}${el.id}`, lat, lon, name, groupId: match.group.id, type: match.type, tags });
   }
   return out;

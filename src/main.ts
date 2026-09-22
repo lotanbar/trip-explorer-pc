@@ -1,6 +1,7 @@
-import { Map as MapLibreMap, NavigationControl, ScaleControl, type MapMouseEvent } from 'maplibre-gl';
+import { Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { openMyPoi, openOsmPoi, openTrail } from './actions';
+import { closeBrowser } from './browser';
 import type { FeatureCollection, Point } from 'geojson';
 import { scanTrips, cacheEvict, CACHE_TTL_MS, type TripInfo } from './backend';
 import { groupForFile } from './groups';
@@ -54,12 +55,10 @@ async function main(): Promise<void> {
     pitch: 0,
     maxPitch: 0,
     dragRotate: false,
-    attributionControl: { compact: true },
+    attributionControl: false, // credited in the sidebar footer instead
   });
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
-  map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-  map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right');
   const tooltip = new Tooltip(mapEl);
   if (import.meta.env.DEV) (window as unknown as { __te: unknown }).__te = { map, settings, lastData, actions: { openMyPoi, openOsmPoi, openTrail } };
 
@@ -222,9 +221,13 @@ async function main(): Promise<void> {
       { layers: hoverLayers },
     );
     const top = features[0];
-    if (!top) return;
-    const props = top.properties ?? {};
     const report = (err: unknown) => setStatus('open', `Could not open: ${err}`);
+    if (!top) {
+      // An empty spot on the map: the embedded browser gives the panel back.
+      closeBrowser().catch(report);
+      return;
+    }
+    const props = top.properties ?? {};
     switch (top.layer.id) {
       case LAYERS.myPois:
         openMyPoi(String(props.path)).catch(report);
@@ -240,6 +243,10 @@ async function main(): Promise<void> {
         openTrail(props.name ? String(props.name) : null, props.website ? String(props.website) : null).catch(report);
         break;
     }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeBrowser().catch((err) => setStatus('open', `Could not close: ${err}`));
   });
 
   await rescan();

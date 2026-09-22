@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@tauri-apps/plugin-opener', () => ({ openPath: vi.fn(), openUrl: vi.fn() }));
+vi.mock('@tauri-apps/plugin-opener', () => ({ openPath: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 import { placeFromAddress, searchUrl } from '../src/actions';
 

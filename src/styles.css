@@ -248,6 +248,19 @@ button:hover {
   text-overflow: ellipsis;
 }
 
+.credit {
+  padding: 4px 12px 6px;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.credit a {
+  color: var(--muted);
+}
+
 .status.error {
   color: #ef5350;
   white-space: normal;
@@ -267,11 +280,3 @@ button:hover {
   max-width: 320px;
 }
 
-.maplibregl-ctrl-attrib {
-  background: rgba(20, 20, 20, 0.7) !important;
-  color: var(--muted);
-}
-
-.maplibregl-ctrl-attrib a {
-  color: var(--muted);
-}

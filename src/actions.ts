@@ -1,6 +1,10 @@
-/** What a click opens: file manager for my POIs, a web search for OSM POIs and trails. */
+/**
+ * What a click opens: the file manager for my POIs; the embedded browser (over the side panel)
+ * for OSM POI searches and trail websites.
+ */
 
-import { openPath, openUrl } from '@tauri-apps/plugin-opener';
+import { openPath } from '@tauri-apps/plugin-opener';
+import { openInBrowser } from './browser';
 
 export function searchUrl(query: string): string {
   return `https://duckduckgo.com/?q=${encodeURIComponent(query.trim())}`;
@@ -41,11 +45,11 @@ export async function openMyPoi(folder: string): Promise<void> {
 export async function openOsmPoi(name: string | null, lat: number, lon: number): Promise<void> {
   if (!name) return;
   const place = await lookupPlace(lat, lon);
-  await openUrl(searchUrl(`${name} ${place}`));
+  await openInBrowser(searchUrl(`${name} ${place}`));
 }
 
 /** The route's website if it has one, otherwise a search for the name. Unnamed lines do nothing. */
 export async function openTrail(name: string | null, website: string | null): Promise<void> {
-  if (website) await openUrl(website);
-  else if (name) await openUrl(searchUrl(name));
+  if (website) await openInBrowser(website);
+  else if (name) await openInBrowser(searchUrl(name));
 }
