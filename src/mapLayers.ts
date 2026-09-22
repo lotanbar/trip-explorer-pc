@@ -188,7 +188,11 @@ export function addOverlayLayers(map: MapLibreMap): void {
   });
 }
 
+/** The data last given to each source (for the dev hook and tests). */
+export const lastData = new Map<string, FeatureCollection>();
+
 export function setData(map: MapLibreMap, sourceId: string, data: FeatureCollection): void {
+  lastData.set(sourceId, data);
   const source = map.getSource(sourceId) as GeoJSONSource | undefined;
   source?.setData(data);
 }

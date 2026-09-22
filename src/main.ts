@@ -1,10 +1,10 @@
 import { Map as MapLibreMap, NavigationControl, ScaleControl, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { openPath, openUrl } from '@tauri-apps/plugin-opener';
+import { openMyPoi, openOsmPoi, openTrail } from './actions';
 import type { FeatureCollection, Point } from 'geojson';
-import { scanTrips, cacheEvict, CACHE_TTL_MS, type TripInfo, type PoiInfo } from './backend';
+import { scanTrips, cacheEvict, CACHE_TTL_MS, type TripInfo } from './backend';
 import { groupForFile } from './groups';
-import { addMarkerImages, addOverlayLayers, LAYERS, setData, SRC_MY_POIS, SRC_OSM_POIS, SRC_RECORDINGS, SRC_TRAILS } from './mapLayers';
+import { addMarkerImages, addOverlayLayers, LAYERS, lastData, setData, SRC_MY_POIS, SRC_OSM_POIS, SRC_RECORDINGS, SRC_TRAILS } from './mapLayers';
 import { loadMapStyle } from './mapStyle';
 import { osmPoiStore, osmPoisGeoJson, OSM_POI_MIN_ZOOM } from './osmPois';
 import { atLeastKm, expanded, type Bounds } from './overpass';
@@ -61,6 +61,7 @@ async function main(): Promise<void> {
   map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
   map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right');
   const tooltip = new Tooltip(mapEl);
+  if (import.meta.env.DEV) (window as unknown as { __te: unknown }).__te = { map, settings, lastData, actions: { openMyPoi, openOsmPoi, openTrail } };
 
   // The base style references a few sprite images it does not ship; blank them instead of warning.
   map.on('styleimagemissing', (e: { id: string }) => {
@@ -210,9 +211,7 @@ async function main(): Promise<void> {
       map.getCanvas().style.cursor = '';
       return;
     }
-    let text = String(top.properties?.hover ?? '');
-    if (top.layer.id === LAYERS.recordingsIncomplete) text = text.replace('\n', ' (incomplete)\n');
-    tooltip.show(text, e.point.x, e.point.y);
+    tooltip.show(String(top.properties?.hover ?? ''), e.point.x, e.point.y);
     map.getCanvas().style.cursor = 'pointer';
   });
   map.on('mouseout', () => tooltip.hide());
@@ -225,41 +224,23 @@ async function main(): Promise<void> {
     const top = features[0];
     if (!top) return;
     const props = top.properties ?? {};
+    const report = (err: unknown) => setStatus('open', `Could not open: ${err}`);
     switch (top.layer.id) {
       case LAYERS.myPois:
-        openPath(String(props.path)).catch((err) => setStatus('open', `Could not open folder: ${err}`));
+        openMyPoi(String(props.path)).catch(report);
         break;
-      case LAYERS.osmPois:
-        if (props.name) void searchOsmPoi(String(props.name), (top.geometry as Point).coordinates);
+      case LAYERS.osmPois: {
+        const [lon, lat] = (top.geometry as Point).coordinates;
+        openOsmPoi(props.name ? String(props.name) : null, lat, lon).catch(report);
         break;
+      }
       case LAYERS.trailsDotted:
       case LAYERS.trailsCable:
       case LAYERS.trailsRail:
-        if (props.website) openUrl(String(props.website)).catch(() => undefined);
-        else if (props.name) openUrl(`https://duckduckgo.com/?q=${encodeURIComponent(String(props.name))}`).catch(() => undefined);
+        openTrail(props.name ? String(props.name) : null, props.website ? String(props.website) : null).catch(report);
         break;
     }
   });
-
-  const townCache = new Map<string, string>();
-
-  /** DuckDuckGo search for the POI name plus its town and country (Nominatim reverse lookup). */
-  async function searchOsmPoi(name: string, [lon, lat]: number[]): Promise<void> {
-    const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
-    let place = townCache.get(key);
-    if (place === undefined) {
-      try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`);
-        const json = await res.json();
-        const a = json.address ?? {};
-        place = [a.city || a.town || a.village || a.municipality || a.county || '', a.country || ''].filter(Boolean).join(' ');
-      } catch {
-        place = '';
-      }
-      townCache.set(key, place);
-    }
-    await openUrl(`https://duckduckgo.com/?q=${encodeURIComponent(`${name} ${place}`.trim())}`).catch(() => undefined);
-  }
 
   await rescan();
   scheduleFetch();
@@ -270,4 +251,3 @@ void main().catch((e) => {
   document.getElementById('sidebar')!.insertAdjacentHTML('beforeend', `<div class="status error">${String(e)}</div>`);
 });
 
-export type { PoiInfo };

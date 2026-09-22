@@ -233,14 +233,23 @@ export function trailHover(line: TrailLine): string {
   return parts.join('\n');
 }
 
+/** Drops pieces whose joined line is shorter than the category's minimum (500 m rule). */
+export function applyLengthRule(lines: TrailLine[]): TrailLine[] {
+  const lengths = joinedLengths(lines.filter((l) => TRAIL_CATEGORIES.find((c) => c.id === l.category)!.minLengthM > 0));
+  return lines.filter((line) => {
+    const info = TRAIL_CATEGORIES.find((c) => c.id === line.category)!;
+    return info.minLengthM === 0 || (lengths.get(line.id) ?? 0) >= info.minLengthM;
+  });
+}
+
+/** Parses an Overpass answer into trail pieces. Exported for tests. */
+export const parseTrails = parse;
+
 export function trailsGeoJson(visibleCategories: Set<string>): FeatureCollection<LineString> {
-  const all = [...trailStore.items.values()];
-  const lengths = joinedLengths(all.filter((l) => TRAIL_CATEGORIES.find((c) => c.id === l.category)!.minLengthM > 0));
   const features: FeatureCollection<LineString>['features'] = [];
-  for (const line of all) {
+  for (const line of applyLengthRule([...trailStore.items.values()])) {
     if (!visibleCategories.has(line.category)) continue;
     const info = TRAIL_CATEGORIES.find((c) => c.id === line.category)!;
-    if (info.minLengthM > 0 && (lengths.get(line.id) ?? 0) < info.minLengthM) continue;
     features.push({
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: line.coords },
