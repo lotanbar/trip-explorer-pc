@@ -6,8 +6,13 @@
 import { openPath } from '@tauri-apps/plugin-opener';
 import { openInBrowser } from './browser';
 
+/** Google, in English; the query shape "<name> <place> info english" gives the best results. */
 export function searchUrl(query: string): string {
-  return `https://duckduckgo.com/?q=${encodeURIComponent(query.trim())}`;
+  return `https://www.google.com/search?hl=en&q=${encodeURIComponent(query.trim())}`;
+}
+
+export function poiSearchQuery(name: string, place: string): string {
+  return `${name} ${place} info english`.replace(/\s+/g, ' ').trim();
 }
 
 const placeCache = new Map<string, string>();
@@ -32,9 +37,10 @@ export async function lookupPlace(lat: number, lon: number): Promise<string> {
   return place;
 }
 
+/** The town (or island / county) a POI belongs to, e.g. "Naxos"; the country is left out on purpose. */
 export function placeFromAddress(a: Record<string, string>): string {
-  const town = a.city || a.town || a.village || a.municipality || a.county || '';
-  return [town, a.country || ''].filter(Boolean).join(' ');
+  const town = a.city || a.town || a.village || a.municipality || a.county || a.state || '';
+  return town.replace(/\s+(regional unit|municipality|municipal unit|district)$/i, '').trim();
 }
 
 export async function openMyPoi(folder: string): Promise<void> {
@@ -45,11 +51,11 @@ export async function openMyPoi(folder: string): Promise<void> {
 export async function openOsmPoi(name: string | null, lat: number, lon: number): Promise<void> {
   if (!name) return;
   const place = await lookupPlace(lat, lon);
-  await openInBrowser(searchUrl(`${name} ${place}`));
+  await openInBrowser(searchUrl(poiSearchQuery(name, place)));
 }
 
 /** The route's website if it has one, otherwise a search for the name. Unnamed lines do nothing. */
 export async function openTrail(name: string | null, website: string | null): Promise<void> {
   if (website) await openInBrowser(website);
-  else if (name) await openInBrowser(searchUrl(name));
+  else if (name) await openInBrowser(searchUrl(`${name} info english`));
 }

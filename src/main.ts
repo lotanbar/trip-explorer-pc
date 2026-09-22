@@ -247,7 +247,28 @@ async function main(): Promise<void> {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeBrowser().catch((err) => setStatus('open', `Could not close: ${err}`));
+    // WebView2 zoom control is on so touchpad pinch reaches the map; keep the page itself unscaled.
+    if (e.ctrlKey && ['+', '-', '=', '0'].includes(e.key)) e.preventDefault();
   });
+  // A touchpad pinch arrives as ctrl+wheel at whatever sits under the mouse pointer. Wherever it
+  // lands, it zooms the map (around the map centre when the pointer is off the map), never the page.
+  window.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey || mapEl.contains(e.target as Node)) return;
+    e.preventDefault();
+    const r = mapEl.getBoundingClientRect();
+    map.getCanvas().dispatchEvent(new WheelEvent('wheel', {
+      deltaY: e.deltaY,
+      deltaMode: e.deltaMode,
+      ctrlKey: true,
+      clientX: r.left + r.width / 2,
+      clientY: r.top + r.height / 2,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, { passive: false });
+  // Pinch and mouse wheel both zoom more per gesture than MapLibre's defaults.
+  map.scrollZoom.setZoomRate(1 / 40);
+  map.scrollZoom.setWheelZoomRate(1 / 200);
 
   await rescan();
   scheduleFetch();

@@ -8,7 +8,8 @@
         "height": 900,
         "minWidth": 900,
         "minHeight": 600,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222",
+        "zoomHotkeysEnabled": true
       }
     ]
   }
