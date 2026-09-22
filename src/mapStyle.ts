@@ -6,7 +6,7 @@
 
 import type { LayerSpecification, StyleSpecification } from 'maplibre-gl';
 
-export const BASE_STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
+export const BASE_STYLE_URL = 'https://tiles.openfreemap.org/styles/fiord';
 
 const TERRAIN_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 
