@@ -247,9 +247,8 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
 const BROWSER_LABEL: &str = "browser";
 
 /// Runs in every page the embedded browser loads. On Google: hides the top bars (Google bar and
-/// the mobile header with settings / share / logo, keeping the search box), and keeps the AI
-/// overview fully open by lifting the wrapper's max-height and hiding its "Show more" overlay.
-/// Class names on Google change, so everything is found structurally.
+/// the mobile header with settings / share / logo, keeping the search box).
+/// Class names on Google change, so the header is found structurally.
 const BROWSER_INIT_SCRIPT: &str = r#"
 (function () {
   if (!/(^|\.)google\./.test(location.hostname)) return;
@@ -267,25 +266,7 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     while (e.parentElement && !e.parentElement.contains(q) && e.parentElement !== document.body) e = e.parentElement;
     if (!e.contains(q) && !e.dataset.teHidden) { e.dataset.teHidden = '1'; e.style.display = 'none'; }
   }
-  function expandOverview() {
-    var buttons = document.querySelectorAll('[role="button"][aria-label^="Show more"], [role="button"][aria-label^="Show all"]');
-    for (var i = 0; i < buttons.length; i++) {
-      var b = buttons[i];
-      if (b.dataset.teDone) continue;
-      b.dataset.teDone = '1';
-      // The clipped wrapper is the nearest ancestor with a max-height; lift it.
-      var e = b.parentElement;
-      var overlay = null;
-      while (e && e !== document.body) {
-        var cs = getComputedStyle(e);
-        if (!overlay && cs.position === 'absolute') overlay = e;
-        if (cs.maxHeight !== 'none') { e.style.maxHeight = 'none'; e.style.overflow = 'visible'; break; }
-        e = e.parentElement;
-      }
-      (overlay || b).style.display = 'none';
-    }
-  }
-  function tidy() { hideHeaderRow(); expandOverview(); }
+  function tidy() { hideHeaderRow(); }
   function start() {
     addCss();
     tidy();
