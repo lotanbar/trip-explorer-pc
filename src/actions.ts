@@ -39,8 +39,11 @@ export async function lookupPlace(lat: number, lon: number): Promise<string> {
 
 /** The town (or island / county) a POI belongs to, e.g. "Naxos"; the country is left out on purpose. */
 export function placeFromAddress(a: Record<string, string>): string {
-  const town = a.city || a.town || a.village || a.municipality || a.county || a.state || '';
-  return town.replace(/\s+(regional unit|municipality|municipal unit|district)$/i, '').trim();
+  const place = a.city || a.town || a.village || a.county || a.municipality || a.state || '';
+  return place
+    .replace(/^(municipality|municipal unit|district|regional unit) of\s+/i, '')
+    .replace(/\s+(regional unit|municipality|municipal unit|district)$/i, '')
+    .trim();
 }
 
 export async function openMyPoi(folder: string): Promise<void> {

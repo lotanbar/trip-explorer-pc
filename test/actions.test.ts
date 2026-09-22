@@ -16,6 +16,8 @@ describe('search actions', () => {
     expect(placeFromAddress({ town: 'Naxos', country: 'Greece' })).toBe('Naxos');
     expect(placeFromAddress({ village: 'Filoti', county: 'Naxos Regional Unit', country: 'Greece' })).toBe('Filoti');
     expect(placeFromAddress({ county: 'Naxos Regional Unit', country: 'Greece' })).toBe('Naxos');
+    expect(placeFromAddress({ municipality: 'Municipality of Naxos and Lesser Cyclades', county: 'Naxos Regional Unit' })).toBe('Naxos');
+    expect(placeFromAddress({ municipality: 'Municipality of Naxos and Lesser Cyclades' })).toBe('Naxos and Lesser Cyclades');
     expect(placeFromAddress({ country: 'Greece' })).toBe('');
   });
 });
