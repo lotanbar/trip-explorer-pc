@@ -248,14 +248,21 @@ const BROWSER_LABEL: &str = "browser";
 
 /// Runs in every page the embedded browser loads. On Google it keeps only the search box and the
 /// results: hides the Google bar, the mobile header row (settings / share / logo), the result-type
-/// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, and shrinks the
-/// header wrapper to the search box so no blank band is left. Class names on Google change, so the
-/// header and tabs are found structurally; the ids used (`sfcnt`, `appbar`, `cnt`) are long-lived.
+/// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, the
+/// "AI Overview" title row, and shrinks the header wrapper to the search box so no blank band is
+/// left. The voice and Lens buttons in the search box are replaced by one image button that switches
+/// to the Images results for the same query (and back to All from there). Class names on Google
+/// change, so everything is found structurally; the ids used (`sfcnt`, `appbar`, `cnt`,
+/// `m-x-content`) are long-lived.
 const BROWSER_INIT_SCRIPT: &str = r#"
 (function () {
   if (!/(^|\.)google\./.test(location.hostname)) return;
   var css = '#gb, #gbwa, [aria-label="Google apps"], #sfcnt, #appbar, #oFNiHe { display: none !important; }' +
-    ' #cnt { padding-top: 0 !important; }';
+    ' #cnt { padding-top: 0 !important; }' +
+    ' [aria-label="Search by voice"], [aria-label="Search by image"] { display: none !important; }' +
+    ' .te-images { display: flex; align-items: center; padding: 0 12px; cursor: pointer; }' +
+    ' .te-images svg { width: 24px; height: 24px; fill: currentColor; }';
+  var IMAGE_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/></svg>';
   function addCss() {
     var s = document.createElement('style');
     s.textContent = css;
@@ -272,7 +279,14 @@ const BROWSER_INIT_SCRIPT: &str = r#"
   // The result-type tabs: the first navigation block in the results container that holds a list.
   function hideTabs() {
     var nav = document.querySelector('#cnt [role="navigation"]');
-    if (nav && nav.querySelector('[role="list"]') && !nav.dataset.teHidden) { nav.dataset.teHidden = '1'; nav.style.display = 'none'; }
+    if (!nav || !nav.querySelector('[role="list"]') || nav.dataset.teHidden) return;
+    nav.dataset.teHidden = '1';
+    nav.style.display = 'none';
+    // Wrappers left holding only padding (Images results) collapse too.
+    var e = nav.parentElement;
+    for (var k = 0; k < 4 && e && e.id !== 'cnt' && e !== document.body; k++, e = e.parentElement) {
+      if (e.getBoundingClientRect().height < 20) e.style.paddingBottom = '0';
+    }
   }
   // The header wrapper has a fixed inline height sized for the (hidden) header row plus the search
   // box; shrink it to the search box. Only written when it differs, so the observer does not loop.
@@ -283,7 +297,42 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     var h = Math.max(0, Math.round(form.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top)) + 'px';
     if (wrap.style.height !== h) wrap.style.height = h;
   }
-  function tidy() { hideHeaderRow(); hideTabs(); shrinkHeader(); }
+  // The "AI Overview" title row: the ancestor of that heading that sits directly in the overview's
+  // content column (its parent is tall and has several children).
+  function hideOverviewTitle() {
+    var headings = document.querySelectorAll('#m-x-content [role="heading"]');
+    for (var i = 0; i < headings.length; i++) {
+      var h = headings[i];
+      if (h.textContent.trim() !== 'AI Overview' || h.dataset.teHidden) continue;
+      h.dataset.teHidden = '1';
+      var e = h;
+      while (e.parentElement && !(e.parentElement.children.length > 1 && e.parentElement.getBoundingClientRect().height > 100)) e = e.parentElement;
+      e.style.display = 'none';
+    }
+  }
+  // Web results <-> Images for the current query (what the hidden Images / All tabs would do).
+  function imagesUrl() {
+    var u = new URL(location.href);
+    if (u.searchParams.get('udm') === '2') u.searchParams.delete('udm');
+    else { u.searchParams.set('udm', '2'); u.searchParams.delete('tbm'); }
+    ['sa', 'ved', 'ei', 'oq', 'gs_lp', 'sclient'].forEach(function (k) { u.searchParams.delete(k); });
+    return u.toString();
+  }
+  function addImagesButton() {
+    var voice = document.querySelector('[aria-label="Search by voice"]');
+    var box = voice && voice.parentElement;
+    if (!box || box.querySelector('.te-images')) return;
+    var b = document.createElement('div');
+    b.className = 'te-images';
+    b.setAttribute('role', 'button');
+    b.setAttribute('aria-label', 'Images');
+    b.title = 'Images';
+    b.style.color = getComputedStyle(voice).color;
+    b.innerHTML = IMAGE_ICON;
+    b.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); location.href = imagesUrl(); });
+    box.appendChild(b);
+  }
+  function tidy() { hideHeaderRow(); hideTabs(); shrinkHeader(); hideOverviewTitle(); addImagesButton(); }
   function start() {
     addCss();
     tidy();
