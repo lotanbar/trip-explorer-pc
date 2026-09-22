@@ -13,6 +13,8 @@ import { fetchRoadsForTrack, type RoadCache } from './track-cleanup/src/overpass
 import type { OsmWay } from './track-cleanup/src/roadGraph';
 
 /** Roads for track cleanup share the 30-day on-disk cache; one entry per ~1 km tile. */
+const ROAD_REQUEST_TIMEOUT_MS = 90_000;
+
 const roadCache: RoadCache = {
   async get(tileKey) {
     try {
@@ -65,8 +67,9 @@ async function load(info: RecordingInfo, trip: TripInfo, onStatus: (s: string | 
     const roads = await fetchRoadsForTrack(segments.flat(), {
       endpoints: OVERPASS_ENDPOINTS,
       cache: roadCache,
-      // The module calls its fetchFn as a method; a bare `fetch` would lose its binding.
-      fetchFn: (input, init) => fetch(input, init),
+      // The module calls its fetchFn as a method (a bare `fetch` would lose its binding), and a
+      // busy Overpass server may otherwise keep a request hanging for minutes.
+      fetchFn: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(ROAD_REQUEST_TIMEOUT_MS) }),
       onProgress: (done, total) => onStatus(`Roads for ${info.name}: ${done}/${total}`),
     });
     const cleaned = cleanTrack(segments, roads);

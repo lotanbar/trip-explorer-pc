@@ -13,6 +13,8 @@ export const OVERPASS_ENDPOINTS = [
 ];
 
 const ENDPOINT_COOLDOWN_MS = 5 * 60_000;
+/** A little above the longest [timeout:] in our queries, so a hung connection cannot stall a fetch. */
+const REQUEST_TIMEOUT_MS = 200_000;
 const LAST_HEALTHY_MAX_AGE_MS = 10 * 60_000;
 
 export class OverpassClient {
@@ -49,7 +51,7 @@ export class OverpassClient {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: `data=${encodeURIComponent(ql)}`,
-          signal,
+          signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
         if (res.status === 429 || res.status >= 500) {
           const retryAfter = Number(res.headers.get('Retry-After')) * 1000;
@@ -63,8 +65,8 @@ export class OverpassClient {
         this.lastHealthyAt = Date.now();
         return json;
       } catch (e) {
-        if ((e as Error).name === 'AbortError') throw e;
-        if (e instanceof TypeError) this.coolDown(endpoint); // network failure / timeout
+        if ((e as Error).name === 'AbortError' && signal?.aborted) throw e;
+        if (e instanceof TypeError || (e as Error).name === 'TimeoutError') this.coolDown(endpoint); // network failure / timeout
         lastError = e;
       }
     }
