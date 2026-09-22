@@ -60,7 +60,7 @@ export function addOverlayLayers(map: MapLibreMap): void {
     minzoom: TRAILS_MIN_ZOOM,
     layout: {
       'symbol-placement': 'line',
-      'symbol-spacing': 200,
+      'symbol-spacing': 450,
       'icon-image': ['get', 'icon'],
       'icon-rotation-alignment': 'viewport',
       'icon-allow-overlap': true,

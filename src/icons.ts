@@ -25,6 +25,8 @@ export const MARKER_HEIGHT = 39;
 export const MY_POI_OUTLINE = '#FFC107';
 export const OSM_POI_OUTLINE = '#FFFFFF';
 export const TRAIL_COLOR = '#BDBDBD';
+/** Icons along trail lines are brighter than the line so they stand out. */
+export const TRAIL_ICON_COLOR = '#FFFFFF';
 
 function svgToImage(svg: string, fill: string): Promise<HTMLImageElement> {
   const styled = svg.replace(
@@ -105,7 +107,7 @@ export async function buildLineIcon(icon: string, cssSize = 16): Promise<MarkerI
     ctx.globalAlpha = 0.6;
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.drawImage(halo, dx * PIXEL_RATIO, dy * PIXEL_RATIO, s, s);
     ctx.globalAlpha = 1;
-    const img = await svgToImage(svg, TRAIL_COLOR);
+    const img = await svgToImage(svg, TRAIL_ICON_COLOR);
     ctx.drawImage(img, 0, 0, s, s);
   }
   return { data: ctx.getImageData(0, 0, s, s), pixelRatio: PIXEL_RATIO };
