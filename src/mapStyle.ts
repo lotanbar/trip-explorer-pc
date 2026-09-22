@@ -32,9 +32,9 @@ export async function loadMapStyle(): Promise<StyleSpecification> {
     source: 'terrain-dem',
     paint: {
       'hillshade-illumination-direction': 315,
-      'hillshade-exaggeration': 0.8,
-      'hillshade-shadow-color': 'rgba(0, 0, 0, 0.7)',
-      'hillshade-highlight-color': 'rgba(255, 255, 255, 0.25)',
+      'hillshade-exaggeration': 0.5,
+      'hillshade-shadow-color': 'rgba(0, 0, 0, 0.5)',
+      'hillshade-highlight-color': 'rgba(255, 255, 255, 0.15)',
       'hillshade-accent-color': 'rgba(100, 100, 100, 0.2)',
     },
   };
