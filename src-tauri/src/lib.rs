@@ -250,8 +250,9 @@ const BROWSER_LABEL: &str = "browser";
 /// results: hides the Google bar, the mobile header row (settings / share / logo), the result-type
 /// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, the
 /// "AI Overview" title row, and shrinks the header wrapper to the search box so no blank band is
-/// left. The voice and Lens buttons in the search box are replaced by one image button that switches
-/// to the Images results for the same query (and back to All from there). Class names on Google
+/// left. The clear (X), voice and Lens buttons in the search box are replaced by one toggle button:
+/// an image icon on web results that switches to the Images results for the same query, and a text
+/// icon on Images that goes back to the web results. Class names on Google
 /// change, so everything is found structurally; the ids used (`sfcnt`, `appbar`, `cnt`,
 /// `m-x-content`) are long-lived.
 const BROWSER_INIT_SCRIPT: &str = r#"
@@ -263,6 +264,8 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     ' .te-images { display: flex; align-items: center; padding: 0 12px; cursor: pointer; }' +
     ' .te-images svg { width: 24px; height: 24px; fill: currentColor; }';
   var IMAGE_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/></svg>';
+  var TEXT_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M280-280h400v-80H280v80Zm0-160h400v-80H280v80Zm0-160h400v-80H280v80Zm-80 480q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg>';
+  var onImages = new URL(location.href).searchParams.get('udm') === '2';
   function addCss() {
     var s = document.createElement('style');
     s.textContent = css;
@@ -318,6 +321,11 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     ['sa', 'ved', 'ei', 'oq', 'gs_lp', 'sclient'].forEach(function (k) { u.searchParams.delete(k); });
     return u.toString();
   }
+  function hideClear() {
+    var clear = document.querySelector('[aria-label="Clear"]');
+    var row = clear && clear.parentElement;
+    if (row && !row.dataset.teHidden) { row.dataset.teHidden = '1'; row.style.display = 'none'; }
+  }
   function addImagesButton() {
     var voice = document.querySelector('[aria-label="Search by voice"]');
     var box = voice && voice.parentElement;
@@ -325,14 +333,14 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     var b = document.createElement('div');
     b.className = 'te-images';
     b.setAttribute('role', 'button');
-    b.setAttribute('aria-label', 'Images');
-    b.title = 'Images';
+    b.setAttribute('aria-label', onImages ? 'Web results' : 'Images');
+    b.title = onImages ? 'Web results' : 'Images';
     b.style.color = getComputedStyle(voice).color;
-    b.innerHTML = IMAGE_ICON;
+    b.innerHTML = onImages ? TEXT_ICON : IMAGE_ICON;
     b.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); location.href = imagesUrl(); });
     box.appendChild(b);
   }
-  function tidy() { hideHeaderRow(); hideTabs(); shrinkHeader(); hideOverviewTitle(); addImagesButton(); }
+  function tidy() { hideHeaderRow(); hideTabs(); shrinkHeader(); hideOverviewTitle(); hideClear(); addImagesButton(); }
   function start() {
     addCss();
     tidy();
