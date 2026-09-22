@@ -246,9 +246,10 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
 
 const BROWSER_LABEL: &str = "browser";
 
-/// Runs in every page the embedded browser loads. On Google: hides the top bar (apps, sign-in,
-/// settings) so only the search is left, and expands the AI overview by clicking its "Show more"
-/// as soon as it appears.
+/// Runs in every page the embedded browser loads. On Google: hides the top bars (Google bar and
+/// the mobile header with settings / share / logo, keeping the search box), and keeps the AI
+/// overview fully open by lifting the wrapper's max-height and hiding its "Show more" overlay.
+/// Class names on Google change, so everything is found structurally.
 const BROWSER_INIT_SCRIPT: &str = r#"
 (function () {
   if (!/(^|\.)google\./.test(location.hostname)) return;
@@ -258,28 +259,43 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     s.textContent = css;
     (document.head || document.documentElement).appendChild(s);
   }
-  function expand() {
-    var nodes = document.querySelectorAll('button, [role="button"]');
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      if (n.dataset.teClicked) continue;
-      var label = ((n.getAttribute('aria-label') || '') + ' ' + (n.textContent || '')).trim().toLowerCase();
-      if (label.indexOf('show more') === 0 || label === 'show more' || /^show more\b/.test(label)) {
-        n.dataset.teClicked = '1';
-        n.click();
+  function hideHeaderRow() {
+    var q = document.querySelector('[name="q"]');
+    var gear = document.querySelector('#og-te, [aria-label="Settings"]');
+    if (!gear || !q) return;
+    var e = gear;
+    while (e.parentElement && !e.parentElement.contains(q) && e.parentElement !== document.body) e = e.parentElement;
+    if (!e.contains(q) && !e.dataset.teHidden) { e.dataset.teHidden = '1'; e.style.display = 'none'; }
+  }
+  function expandOverview() {
+    var buttons = document.querySelectorAll('[role="button"][aria-label^="Show more"], [role="button"][aria-label^="Show all"]');
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      if (b.dataset.teDone) continue;
+      b.dataset.teDone = '1';
+      // The clipped wrapper is the nearest ancestor with a max-height; lift it.
+      var e = b.parentElement;
+      var overlay = null;
+      while (e && e !== document.body) {
+        var cs = getComputedStyle(e);
+        if (!overlay && cs.position === 'absolute') overlay = e;
+        if (cs.maxHeight !== 'none') { e.style.maxHeight = 'none'; e.style.overflow = 'visible'; break; }
+        e = e.parentElement;
       }
+      (overlay || b).style.display = 'none';
     }
   }
+  function tidy() { hideHeaderRow(); expandOverview(); }
   function start() {
     addCss();
-    expand();
+    tidy();
     var timer = null;
     new MutationObserver(function () {
       clearTimeout(timer);
-      timer = setTimeout(expand, 300);
-    }).observe(document.documentElement, { childList: true, subtree: true });
+      timer = setTimeout(tidy, 250);
+    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
   }
-  if (document.head) start(); else document.addEventListener('DOMContentLoaded', start);
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
 })();
 "#;
 
