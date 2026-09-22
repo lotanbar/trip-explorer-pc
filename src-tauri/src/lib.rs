@@ -249,8 +249,9 @@ const BROWSER_LABEL: &str = "browser";
 /// Runs in every page the embedded browser loads. On Google it keeps only the search box and the
 /// results: hides the Google bar, the mobile header row (settings / share / logo), the result-type
 /// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, the
-/// "AI Overview" title row, and shrinks the header wrapper to the search box so no blank band is
-/// left. The clear (X), voice and Lens buttons in the search box are replaced by one toggle button:
+/// "AI Overview" title row and the rule that ran under the tabs, keeps the AI overview fully open
+/// (lifting its max-height and hiding the "Show more" overlay), and shrinks the header wrapper to
+/// the search box so no blank band is left. The clear (X), voice and Lens buttons in the search box are replaced by one toggle button:
 /// an image icon on web results that switches to the Images results for the same query, and a text
 /// icon on Images that goes back to the web results. Class names on Google
 /// change, so everything is found structurally; the ids used (`sfcnt`, `appbar`, `cnt`,
@@ -262,7 +263,8 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     ' #cnt { padding-top: 0 !important; }' +
     ' [aria-label="Search by voice"], [aria-label="Search by image"] { display: none !important; }' +
     ' .te-images { display: flex; align-items: center; padding: 0 12px; cursor: pointer; }' +
-    ' .te-images svg { width: 24px; height: 24px; fill: currentColor; }';
+    ' .te-images svg { width: 24px; height: 24px; fill: currentColor; }' +
+    ' .te-collapsed { display: none !important; }';
   var IMAGE_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/></svg>';
   var TEXT_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M280-280h400v-80H280v80Zm0-160h400v-80H280v80Zm0-160h400v-80H280v80Zm-80 480q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg>';
   var onImages = new URL(location.href).searchParams.get('udm') === '2';
@@ -340,15 +342,86 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     b.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); location.href = imagesUrl(); });
     box.appendChild(b);
   }
-  function tidy() { hideHeaderRow(); hideTabs(); shrinkHeader(); hideOverviewTitle(); hideClear(); addImagesButton(); }
+  // The 1px rule that sat under the tabs: a zero-height block in the results container whose only
+  // visible content is a bordered hairline.
+  function hideStrayRule() {
+    var cnt = document.getElementById('cnt');
+    if (!cnt) return;
+    for (var i = 0; i < cnt.children.length; i++) {
+      var block = cnt.children[i];
+      if (block.dataset.teHidden || block.getBoundingClientRect().height > 1 || block.textContent.trim()) continue;
+      var lines = block.querySelectorAll('*');
+      for (var j = 0; j < lines.length; j++) {
+        var r = lines[j].getBoundingClientRect();
+        if (r.height <= 2 && r.width > 100 && getComputedStyle(lines[j]).borderBottomWidth !== '0px') {
+          block.dataset.teHidden = '1';
+          block.style.display = 'none';
+          break;
+        }
+      }
+    }
+  }
+  // Keep the AI overview open: the clipped wrapper is the nearest ancestor of "Show more" with a
+  // max-height; lift it and hide the overlay that holds the button.
+  function expandOverview() {
+    var buttons = document.querySelectorAll('[role="button"][aria-label^="Show more"], [role="button"][aria-label^="Show all"]');
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      if (b.dataset.teDone) continue;
+      b.dataset.teDone = '1';
+      var e = b.parentElement;
+      var overlay = null;
+      while (e && e !== document.body) {
+        var cs = getComputedStyle(e);
+        if (!overlay && cs.position === 'absolute') overlay = e;
+        if (cs.maxHeight !== 'none') { e.style.maxHeight = 'none'; e.style.overflow = 'visible'; break; }
+        e = e.parentElement;
+      }
+      (overlay || b).style.display = 'none';
+      // The fade-out gradient over the last lines is its own absolute layer inside the wrapper.
+      var layers = (e || b.parentElement).querySelectorAll('*');
+      for (var j = 0; j < layers.length; j++) {
+        var ls = getComputedStyle(layers[j]);
+        if (ls.position === 'absolute' && ls.backgroundImage.indexOf('gradient') >= 0 && layers[j].getBoundingClientRect().width > 200) {
+          layers[j].style.display = 'none';
+        }
+      }
+    }
+  }
+  // Invisible blocks inside the overview (its sources panel is laid out with visibility:hidden and
+  // leaves a blank band) are taken out of the flow until Google shows them.
+  function collapseInvisible() {
+    var box = document.getElementById('m-x-content');
+    if (!box) return;
+    var done = box.querySelectorAll('.te-collapsed');
+    for (var i = 0; i < done.length; i++) {
+      done[i].classList.remove('te-collapsed');
+      if (getComputedStyle(done[i]).visibility === 'hidden') done[i].classList.add('te-collapsed');
+    }
+    var all = box.querySelectorAll('*');
+    for (var j = 0; j < all.length; j++) {
+      var e = all[j];
+      if (e.classList.contains('te-collapsed')) continue;
+      var cs = getComputedStyle(e);
+      if (cs.visibility !== 'hidden' || cs.display === 'none') continue;
+      if (e.getBoundingClientRect().height < 40) continue;
+      if (e.parentElement && getComputedStyle(e.parentElement).visibility === 'hidden') continue;
+      e.classList.add('te-collapsed');
+    }
+  }
+  function tidy() {
+    hideHeaderRow(); hideTabs(); hideStrayRule(); shrinkHeader(); hideOverviewTitle(); expandOverview();
+    collapseInvisible(); hideClear(); addImagesButton();
+  }
   function start() {
     addCss();
     tidy();
     var timer = null;
-    new MutationObserver(function () {
+    var observer = new MutationObserver(function () {
       clearTimeout(timer);
-      timer = setTimeout(tidy, 250);
-    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      timer = setTimeout(function () { tidy(); observer.takeRecords(); }, 250);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
   }
   if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
 })();
