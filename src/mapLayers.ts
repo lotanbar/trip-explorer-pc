@@ -1,7 +1,7 @@
 /**
  * The overlay sources and layers: recordings, my POIs, OSM POIs and trail lines, plus the marker
  * and line-pattern images they use. Layer order, bottom to top: trails, recordings, OSM POIs, my POIs,
- * search results.
+ * ticked plan stops, search results.
  */
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
@@ -16,6 +16,7 @@ export const SRC_RECORDINGS = 'recordings';
 export const SRC_OSM_POIS = 'osm-pois';
 export const SRC_MY_POIS = 'my-pois';
 export const SRC_SEARCH = 'search-results';
+export const SRC_PLANS = 'plans';
 /** The search-result pin: the app's blue, a plain dot in the head. */
 export const SEARCH_COLOR = '#2196F3';
 export const SEARCH_ICON = 'search|result';
@@ -28,6 +29,8 @@ export const LAYERS = {
   osmPois: 'osm-poi-symbols',
   myPois: 'my-poi-symbols',
   myPoiLabels: 'my-poi-labels',
+  plans: 'plan-stops',
+  planLabels: 'plan-labels',
   search: 'search-symbols',
   searchLabels: 'search-labels',
 };
@@ -48,7 +51,7 @@ export async function addMarkerImages(map: MapLibreMap): Promise<void> {
 }
 
 export function addOverlayLayers(map: MapLibreMap): void {
-  for (const id of [SRC_TRAILS, SRC_RECORDINGS, SRC_OSM_POIS, SRC_MY_POIS, SRC_SEARCH]) {
+  for (const id of [SRC_TRAILS, SRC_RECORDINGS, SRC_OSM_POIS, SRC_MY_POIS, SRC_PLANS, SRC_SEARCH]) {
     map.addSource(id, { type: 'geojson', data: EMPTY });
   }
   // Route lines sit under the base map's labels (place names stay readable); icons and markers on top.
@@ -132,6 +135,33 @@ export function addOverlayLayers(map: MapLibreMap): void {
       'text-size': 13,
       'text-anchor': 'top',
       'text-offset': [0, 0.4],
+    },
+    paint: { 'text-color': '#FFFFFF', 'text-halo-color': '#000000', 'text-halo-width': 1 },
+  });
+
+  // ── Ticked plan stops: dots in the plan's colour ──
+  map.addLayer({
+    id: LAYERS.plans,
+    type: 'circle',
+    source: SRC_PLANS,
+    paint: {
+      'circle-radius': 7,
+      'circle-color': ['get', 'color'],
+      'circle-stroke-color': '#FFFFFF',
+      'circle-stroke-width': 1.5,
+    },
+  });
+  map.addLayer({
+    id: LAYERS.planLabels,
+    type: 'symbol',
+    source: SRC_PLANS,
+    minzoom: 11,
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 13,
+      'text-anchor': 'top',
+      'text-offset': [0, 0.8],
     },
     paint: { 'text-color': '#FFFFFF', 'text-halo-color': '#000000', 'text-halo-width': 1 },
   });

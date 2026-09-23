@@ -1,7 +1,7 @@
 /**
  * The search/plan window: shown in the side panel in place of its controls when the search bar
  * (always at the bottom of the panel) is used, a plan is picked from the Plans menu or a POI is
- * right-clicked. Top to bottom: the search results, the plan's stops (numbered, draggable) with
+ * right-clicked. Top to bottom: the search results, the plan's stops (draggable) with
  * GPX import/export, the search bar with the Plans menu. Right-click adds a result to the plan or
  * removes a stop; a click flies to it.
  *
@@ -29,7 +29,10 @@ export interface SearchWindowCallbacks {
   /** The results changed: draw them on the map (empty when the window closes). */
   onResults: (results: SearchResult[]) => void;
   onPlanChanged: () => void;
-  onOpenChanged: (open: boolean) => void;
+  /** The window opened or closed, or shows another plan (for the screen history). */
+  onScreenChanged: () => void;
+  /** A plan file was written (the Plans section re-reads the plans). */
+  onPlanSaved: () => void;
   /** The window must be seen now (it may have been open already): hide whatever covers the panel. */
   reveal: () => void;
   setStatus: (message: string | null) => void;
@@ -170,7 +173,7 @@ export class SearchWindow {
       if (query) this.live.update(query, this.cb.near);
     }
     if (focus) this.input.focus();
-    this.cb.onOpenChanged(true);
+    this.cb.onScreenChanged();
     this.cb.onResults(this.results);
   }
 
@@ -184,12 +187,29 @@ export class SearchWindow {
     this.panel.classList.remove('search-open');
     settings.searchOpen = false;
     saveSettings();
-    this.cb.onOpenChanged(false);
+    this.cb.onScreenChanged();
   }
 
-  /** The × : closes, unless a saved plan with unsaved edits is shown and the question is cancelled. */
-  private async requestClose(): Promise<void> {
-    if (await this.leaveShown()) this.close();
+  /** The ×, a click on empty map: closes, unless a saved plan with unsaved edits is shown and the question is cancelled. */
+  async requestClose(): Promise<boolean> {
+    if (!this.isOpen) return true;
+    if (!(await this.leaveShown())) return false;
+    this.close();
+    return true;
+  }
+
+  /** The saved plan shown (its file), or null for the temp plan. */
+  get shownFile(): string | null {
+    return this.shown?.file ?? null;
+  }
+
+  /** Opens the window on the temp plan (null) or a saved plan's file; false when that was refused or failed. */
+  async showPlan(file: string | null): Promise<boolean> {
+    if (file === this.shownFile) {
+      this.open('', false);
+      return true;
+    }
+    return file === null ? this.continueTemp() : this.load(baseName(file).replace(/\.txt$/i, ''), file);
   }
 
   // ── Results ──
@@ -284,7 +304,6 @@ export class SearchWindow {
       li.dataset.index = String(i);
       li.title = 'Click: go there and search · Right-click: remove · Drag: reorder';
       li.innerHTML = `<span class="num"></span><span class="name"></span>`;
-      li.querySelector('.num')!.textContent = String(i + 1);
       li.querySelector('.name')!.textContent = stop.name;
       li.addEventListener('click', () => this.cb.openStop(stop));
       li.addEventListener('contextmenu', (e) => {
@@ -360,6 +379,8 @@ export class SearchWindow {
       }
       this.shown = { file: path, name, stops, saved: { name, stops }, dirty: false };
       this.planChanged();
+      this.cb.onScreenChanged();
+      this.cb.onPlanSaved();
       return true;
     } catch (e) {
       this.cb.setStatus(String(e));
@@ -455,26 +476,32 @@ export class SearchWindow {
     this.shown = null;
     this.planChanged();
     this.open('', false);
+    this.cb.onScreenChanged();
   }
 
-  private async continueTemp(): Promise<void> {
-    if (!(await this.leaveShown())) return;
+  private async continueTemp(): Promise<boolean> {
+    if (!(await this.leaveShown())) return false;
     this.shown = null;
     this.planChanged();
     this.open('', false);
+    this.cb.onScreenChanged();
+    return true;
   }
 
   /** Shows a saved plan. The temp plan is kept as it is. */
-  private async load(name: string, path: string): Promise<void> {
-    if (!(await this.leaveShown())) return;
+  private async load(name: string, path: string): Promise<boolean> {
+    if (!(await this.leaveShown())) return false;
     try {
       const stops = parsePlanFile(await readText(path));
       this.shown = { file: path, name, stops, saved: { name, stops: [...stops] }, dirty: false };
       this.planChanged();
       this.open('', false);
+      this.cb.onScreenChanged();
       this.cb.setStatus(`Loaded ${name} (${stops.length} stop${stops.length === 1 ? '' : 's'})`);
+      return true;
     } catch (e) {
       this.cb.setStatus(String(e));
+      return false;
     }
   }
 

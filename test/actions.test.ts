@@ -22,20 +22,24 @@ describe('search actions', () => {
   });
 });
 
-describe('browser history', () => {
-  it('records visits after the cursor, drops forward ones on a new page, and stops at both ends', async () => {
-    const { pushVisit, stepCursor } = await import('../src/browser');
-    const list: { url: string }[] = [];
-    let c = pushVisit(list, -1, { url: 'a' });
-    c = pushVisit(list, c, { url: 'b' });
-    c = pushVisit(list, c, { url: 'b' }); // the same page again is not a new visit
-    expect(list.map((v) => v.url)).toEqual(['a', 'b']);
-    expect(c).toBe(1);
+describe('screen history', () => {
+  it('records screens after the cursor, drops forward ones on a new screen, and stops at both ends', async () => {
+    const { pushScreen, stepCursor } = await import('../src/screens');
+    type S = import('../src/screens').Screen;
+    const list: S[] = [];
+    let c = pushScreen(list, -1, { kind: 'controls' });
+    c = pushScreen(list, c, { kind: 'browser', url: 'b' });
+    c = pushScreen(list, c, { kind: 'browser', url: 'b', lat: 1, lon: 2 }); // the same page again is not a new screen
+    c = pushScreen(list, c, { kind: 'search', plan: null });
+    c = pushScreen(list, c, { kind: 'search', plan: 'x.txt' }); // another plan is another screen
+    expect(list.map((s) => s.kind)).toEqual(['controls', 'browser', 'search', 'search']);
+    expect(c).toBe(3);
     c = stepCursor(list.length, c, -1);
-    expect(c).toBe(0);
-    expect(stepCursor(list.length, c, -1)).toBe(0);
-    c = pushVisit(list, c, { url: 'c' });
-    expect(list.map((v) => v.url)).toEqual(['a', 'c']);
-    expect(stepCursor(list.length, c, 1)).toBe(1);
+    c = stepCursor(list.length, c, -1);
+    expect(c).toBe(1);
+    expect(stepCursor(list.length, 0, -1)).toBe(0);
+    c = pushScreen(list, c, { kind: 'controls' });
+    expect(list.map((s) => s.kind)).toEqual(['controls', 'browser', 'controls']);
+    expect(stepCursor(list.length, c, 1)).toBe(c);
   });
 });

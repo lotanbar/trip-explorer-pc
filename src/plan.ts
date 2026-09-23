@@ -21,6 +21,16 @@ export interface PlanDraft {
   stops: PlanStop[];
 }
 
+/** A plan file in trips/plans/, read. */
+export interface SavedPlan {
+  name: string;
+  path: string;
+  stops: PlanStop[];
+}
+
+/** The key a saved plan's stop is ticked by in the Plans section (its place in the file). */
+export const planStopKey = (path: string, index: number) => `${path}#${index}`;
+
 export const EMPTY_PLAN: PlanDraft = { file: null, name: '', stops: [] };
 
 /** Coordinates to five decimals (about a metre), like the example in the spec. */

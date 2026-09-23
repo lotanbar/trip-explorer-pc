@@ -26,7 +26,8 @@ Needs Node, Rust (MSVC toolchain on Windows) and the WebView2 runtime (Windows) 
 | `src/overpass.ts` | Endpoints with cooldown, strip fetching, 30-day cache |
 | `src/osmPois.ts`, `src/trails.ts` | The two Overpass features |
 | `src/recordings.ts` | GPX loading and the display-only track cleanup |
-| `src/searchWindow.ts`, `src/photon.ts`, `src/plan.ts`, `src/names.ts` | Search and plan: the window in the side panel, Photon search-as-you-type plus my own POIs by name, the plan model and file format, name rules |
+| `src/searchWindow.ts`, `src/photon.ts`, `src/plan.ts`, `src/gpx.ts`, `src/names.ts` | Search and plan: the window in the side panel, Photon search-as-you-type plus my own POIs by name, the plan model and file format, GPX import/export, name rules |
+| `src/screens.ts`, `src/dialog.ts` | The side panel's screen history (Alt+Left / Alt+Right); the in-app question box |
 | `src/track-cleanup/` | The cleanup module, copied as-is from the reference repo's `track-cleanup` branch (`npm test` inside it) |
 | `src/icons/` | Bundled SVG icons (Maki, Temaki or hand-drawn) |
 
@@ -35,11 +36,12 @@ Deviations from the spec (agreed on 2026-09-22):
 - Only named OSM POIs are fetched, and places of worship / cemeteries additionally need a notable tag (`wikidata`, `wikipedia`, `heritage`, `website`, `image`, `wikimedia_commons`, `description` or `name:en`); every countryside chapel is tagged and they swamped the map.
 - Clicking an OSM POI or a trail opens the search / website in an embedded browser laid over the side panel
   (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
-  empty spot on the map, or opening the search window (right-click a POI), brings the panel back.
-- Every page opened in the browser is a visit in an in-memory history (gone when the app closes); Alt+Left /
-  Alt+Right step through it, reopening the page and flying to its POI. Inside the browser the keys are reported
-  by navigating to `https://history.trip-explorer.invalid/<step>`, which the backend cancels and turns into the
-  `browser-history` event.
+  empty spot on the map brings the panel's controls back (the browser and the search window both go).
+- The side panel keeps an in-memory history of its screens (the controls, the search/plan window with the temp
+  or a saved plan, a browser page), gone when the app closes: Alt+Left / Alt+Right with the map or panel focused
+  step through it (`src/screens.ts`). When the embedded browser has the keyboard the keys are its own back /
+  forward instead (the page's init script calls `history.back()` / `history.forward()`). A screen brought back
+  from the history does not give the browser the keyboard, so the keys keep walking the history.
 - Place labels on the base map (cities, villages, islands ...) are drawn near-white and are clickable: they open the same search as a POI. Group colours are muted versions of the spec palette.
 - All trail categories use the same plain grey line; only the repeated icon differs (no dots, crossbars or ticks).
 - No zoom buttons, scale bar or attribution control on the map: pinch / ctrl+scroll zoom.

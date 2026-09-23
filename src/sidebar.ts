@@ -1,11 +1,14 @@
 /**
- * The side panel: root folder picker, the folder tree with checkboxes, the group toggles and the
- * trail toggles. Every choice is written straight into `settings` and reported through callbacks.
+ * The side panel: root folder picker, the folder tree with checkboxes, the saved plans with
+ * checkboxes (a whole plan or single stops), the group toggles and the trail toggles. The trips and
+ * plans scroll inside their own sections. Every choice is written straight into `settings` and
+ * reported through callbacks.
  */
 
 import { open } from '@tauri-apps/plugin-dialog';
 import type { TripInfo } from './backend';
 import { GROUPS, groupForFile, groupById, NO_GROUP } from './groups';
+import { planStopKey, type SavedPlan } from './plan';
 import { iconSvg } from './icons';
 import { settings, saveSettings } from './settings';
 import { TRAIL_CATEGORIES } from './trails';
@@ -22,14 +25,18 @@ export interface SidebarCallbacks {
 
 export class Sidebar {
   private readonly treeEl: HTMLElement;
+  private readonly planTreeEl: HTMLElement;
   private readonly rootLabel: HTMLElement;
   private readonly statusEl: HTMLElement;
   private trips: TripInfo[] = [];
   private checkboxes: HTMLInputElement[] = [];
+  private planBoxes: HTMLInputElement[] = [];
+  /** Plans whose stops are listed (by file); the rest show as one row. Not remembered. */
+  private readonly expanded = new Set<string>();
 
   constructor(private readonly root: HTMLElement, private readonly cb: SidebarCallbacks) {
     root.innerHTML = `
-      <section class="panel-section">
+      <section class="panel-section trips-section">
         <div class="section-head">
           <h2>Trips</h2>
           <div class="actions">
@@ -40,6 +47,10 @@ export class Sidebar {
         </div>
         <div id="root-label" class="root-label muted">No folder chosen</div>
         <div id="tree" class="tree"></div>
+      </section>
+      <section class="panel-section plans-section">
+        <div class="section-head"><h2>Plans</h2></div>
+        <div id="plan-tree" class="tree"></div>
       </section>
       <section class="panel-section">
         <div class="section-head">
@@ -58,6 +69,7 @@ export class Sidebar {
       <div id="status" class="status" hidden></div>
     `;
     this.treeEl = root.querySelector('#tree')!;
+    this.planTreeEl = root.querySelector('#plan-tree')!;
     this.rootLabel = root.querySelector('#root-label')!;
     this.statusEl = root.querySelector('#status')!;
 
@@ -131,8 +143,49 @@ export class Sidebar {
     this.syncParents();
   }
 
+  // ── Plans ──
+
+  /** The saved plans: a row per plan (ticks all its stops) with its stops under it when expanded. */
+  setPlans(plans: SavedPlan[]): void {
+    this.planBoxes = [];
+    this.planTreeEl.innerHTML = '';
+    if (plans.length === 0) {
+      this.planTreeEl.innerHTML = '<div class="muted">No saved plans</div>';
+      return;
+    }
+    const checked = new Set(settings.checked);
+    for (const plan of plans) {
+      const leaves = plan.stops.map((_, i) => planStopKey(plan.path, i));
+      const color = tripColor(plan.name); // from the name, like a trip's; the map uses the same
+      const swatch = `<span class="swatch" style="background:${color}"></span>`;
+      const planNode = this.node('plan', plan.name, leaves, checked, swatch, '', plan.path, this.planBoxes);
+      const children = document.createElement('div');
+      children.className = 'children';
+      children.hidden = !this.expanded.has(plan.path);
+      plan.stops.forEach((stop, i) => {
+        children.appendChild(this.node('stop', stop.name, [leaves[i]], checked, `<span class="stop-dot" style="background:${color}"></span>`, '', stop.name, this.planBoxes));
+      });
+      // A span, not a button: a button inside the row's label would take the label's clicks from the checkbox.
+      const caret = document.createElement('span');
+      caret.className = 'caret';
+      caret.setAttribute('role', 'button');
+      caret.title = 'Show / hide the stops';
+      caret.textContent = children.hidden ? '▸' : '▾';
+      caret.addEventListener('click', (e) => {
+        e.preventDefault(); // not a click on the label: the checkbox stays as it is
+        children.hidden = !children.hidden;
+        caret.textContent = children.hidden ? '▸' : '▾';
+        children.hidden ? this.expanded.delete(plan.path) : this.expanded.add(plan.path);
+      });
+      planNode.querySelector('.row')!.prepend(caret);
+      planNode.appendChild(children);
+      this.planTreeEl.appendChild(planNode);
+    }
+    this.syncParents();
+  }
+
   /** One tree row. `leaves` are the paths the checkbox controls (one for a leaf, many for a folder). */
-  private node(kind: string, label: string, leaves: string[], checked: Set<string>, prefixHtml = '', badge = '', title = ''): HTMLElement {
+  private node(kind: string, label: string, leaves: string[], checked: Set<string>, prefixHtml = '', badge = '', title = '', boxes = this.checkboxes): HTMLElement {
     const el = document.createElement('div');
     el.className = `node node-${kind}`;
     const row = document.createElement('label');
@@ -150,7 +203,7 @@ export class Sidebar {
       this.syncParents();
       this.cb.onCheckedChanged();
     });
-    this.checkboxes.push(box);
+    boxes.push(box);
     row.appendChild(box);
     const text = document.createElement('span');
     text.className = 'label';
@@ -164,7 +217,7 @@ export class Sidebar {
   /** Folder checkboxes reflect their leaves: all → checked, some → indeterminate. */
   private syncParents(): void {
     const checked = new Set(settings.checked);
-    for (const box of this.checkboxes) {
+    for (const box of [...this.checkboxes, ...this.planBoxes]) {
       const leaves = JSON.parse(box.dataset.leaves!) as string[];
       const n = leaves.filter((l) => checked.has(l)).length;
       box.checked = n > 0 && n === leaves.length;

@@ -132,8 +132,45 @@ body {
   min-height: 0;
 }
 
-.panel-section:first-child {
-  flex: 1 1 auto;
+/* The trips and the plans take what is left and scroll inside; groups and trails keep their size. */
+.panel-section {
+  flex: none;
+}
+
+.panel-section.trips-section {
+  flex: 1 1 0;
+  min-height: 120px;
+}
+
+.panel-section.plans-section {
+  flex: 0 1 auto;
+  max-height: 24%;
+  min-height: 60px;
+}
+
+.tree .caret {
+  flex: none;
+  width: 14px;
+  margin-right: -2px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.tree .caret:hover {
+  color: var(--text);
+}
+
+.stop-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid #fff;
+}
+
+.node-plan > .row .name {
+  font-weight: 600;
 }
 
 .section-head {
@@ -460,16 +497,11 @@ button:hover {
 
 .plan-list .num {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 8px;
+  height: 8px;
+  margin: 0 4px;
   border-radius: 50%;
   background: var(--primary);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .plan-list .name,
