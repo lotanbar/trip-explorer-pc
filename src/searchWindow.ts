@@ -7,13 +7,15 @@
 
 import { listPlans, readText, savePlan } from './backend';
 import { checkName } from './names';
-import { LiveSearch, type SearchResult } from './photon';
+import { LiveSearch, matchMyPois, resultKey, type MyPoi, type SearchResult } from './photon';
 import { EMPTY_PLAN, moveStop, parsePlanFile, planFileText, toggleStop, type PlanStop } from './plan';
 import { saveSettings, settings } from './settings';
 
 export interface SearchWindowCallbacks {
   /** The map centre, to bias the search. */
   near: () => { lat: number; lon: number } | null;
+  /** All my POIs, searched by name alongside Photon. */
+  myPois: () => readonly MyPoi[];
   flyTo: (lat: number, lon: number) => void;
   /** A plan entry was pressed: the web search a click on the POI would open. */
   openStop: (stop: PlanStop) => void;
@@ -29,7 +31,9 @@ function baseName(path: string): string {
 }
 
 export function resultStop(r: SearchResult): PlanStop {
-  return { key: `search:${r.id}`, lat: r.lat, lon: r.lon, name: r.name, searchName: r.name };
+  return r.mine
+    ? { key: resultKey(r), lat: r.lat, lon: r.lon, name: r.name }
+    : { key: resultKey(r), lat: r.lat, lon: r.lon, name: r.name, searchName: r.name };
 }
 
 export class SearchWindow {
@@ -43,8 +47,8 @@ export class SearchWindow {
   private readonly live: LiveSearch;
 
   constructor(private readonly panel: HTMLElement, private readonly cb: SearchWindowCallbacks) {
-    // Both sit above the status line, which stays visible (with the credit) under the embedded browser too.
-    // The bar is one element, always shown: last in the panel when the window is closed, under the window when open.
+    // Both sit above the status line. The bar is one element, always shown: last in the panel when the
+    // window is closed, under the window when open; it stays visible under the embedded browser too.
     panel.querySelector('#status')!.insertAdjacentHTML('beforebegin', `
       <div id="search-window" class="search-window" hidden>
         <div class="section-head">
@@ -65,6 +69,7 @@ export class SearchWindow {
       </div>
       <div id="search-bar" class="search-bar">
         <input id="search-input" type="search" placeholder="Search places…" autocomplete="off" spellcheck="false">
+        <button id="plan-open" title="Open the search and plan window">Plans</button>
       </div>
     `);
     this.win = panel.querySelector('#search-window')!;
@@ -80,6 +85,7 @@ export class SearchWindow {
       this.live.update(this.input.value, cb.near);
     });
     panel.querySelector('#search-close')!.addEventListener('click', () => this.close());
+    panel.querySelector('#plan-open')!.addEventListener('click', () => this.open(this.input.value));
     this.nameInput.addEventListener('input', () => {
       settings.plan.name = this.nameInput.value;
       saveSettings();
@@ -92,12 +98,15 @@ export class SearchWindow {
     document.addEventListener('click', () => { this.plansMenu.hidden = true; });
 
     this.live = new LiveSearch((query, results) => {
+      const mine = matchMyPois(query, cb.myPois());
       if (results instanceof Error) {
         cb.setStatus(`Search failed: ${results.message}`);
+        this.setResults(mine, null);
         return;
       }
       cb.setStatus(null);
-      this.setResults(results, query ? (results.length ? null : 'Nothing found') : null);
+      const all = [...mine, ...results];
+      this.setResults(all, query ? (all.length ? null : 'Nothing found') : null);
     });
 
     this.nameInput.value = settings.plan.name;
@@ -146,8 +155,8 @@ export class SearchWindow {
     this.resultList.innerHTML = '';
     for (const r of results) {
       const row = document.createElement('div');
-      row.className = 'result';
-      row.dataset.key = `search:${r.id}`;
+      row.className = r.mine ? 'result mine' : 'result';
+      row.dataset.key = resultKey(r);
       row.title = 'Click: go there · Right-click: add to / remove from the plan';
       row.innerHTML = `<span class="pin"></span><span class="text"><span class="name"></span><span class="sub muted"></span></span>`;
       row.querySelector('.name')!.textContent = r.name;
@@ -165,7 +174,7 @@ export class SearchWindow {
 
   /** The search result with this key, if it is in the current result list. */
   resultByKey(key: string): SearchResult | undefined {
-    return this.results.find((r) => `search:${r.id}` === key);
+    return this.results.find((r) => resultKey(r) === key);
   }
 
   // ── Plan ──
@@ -192,13 +201,12 @@ export class SearchWindow {
     this.cb.onPlanChanged();
   }
 
+  /** The list grows with the stops (up to half the window) and is not shown at all while the plan is empty. */
   private renderPlan(): void {
     this.planList.innerHTML = '';
     const stops = settings.plan.stops;
-    if (stops.length === 0) {
-      this.planList.innerHTML = '<li class="muted empty">Right-click a POI or a result to add it</li>';
-      return;
-    }
+    this.planList.hidden = stops.length === 0;
+    if (stops.length === 0) return;
     stops.forEach((stop, i) => {
       const li = document.createElement('li');
       li.className = 'stop';

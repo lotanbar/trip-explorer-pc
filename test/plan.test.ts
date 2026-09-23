@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { checkName } from '../src/names';
-import { parsePhoton, placeOf } from '../src/photon';
+import { matchMyPois, parsePhoton, placeOf, resultKey } from '../src/photon';
 import { moveStop, parsePlanFile, planFileText, toggleStop, type PlanStop } from '../src/plan';
 
 const a: PlanStop = { key: 'osm:n1', lat: 45.4642, lon: 9.19, name: 'Castello Sforzesco' };
@@ -58,5 +58,18 @@ describe('photon', () => {
     expect(r.map((x) => x.id)).toEqual(['W1', 'N2']);
     expect(r[0]).toMatchObject({ name: 'Castello Sforzesco', place: 'Milan, Italy', kind: 'castle', lat: 45.4642, lon: 9.19 });
     expect(placeOf({ name: 'Milan', city: 'Milan', state: 'Lombardy', country: 'Italy' })).toBe('Lombardy, Italy');
+  });
+
+  it('matches my POIs by name, case-insensitively, and keys them like the map does', () => {
+    const pois = [
+      { name: 'Portara', path: 'C:/trips/Greece/Portara', lat: 37.11, lon: 25.37, trip: 'Greece 2026' },
+      { name: 'Kastro cave', path: 'C:/trips/Greece/Kastro cave', lat: 37.1, lon: 25.4, trip: 'Greece 2026' },
+    ];
+    expect(matchMyPois('  ', pois)).toEqual([]);
+    const r = matchMyPois('CAVE', pois);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ id: 'C:/trips/Greece/Kastro cave', name: 'Kastro cave', place: 'Greece 2026', kind: 'my POI', mine: true });
+    expect(resultKey(r[0])).toBe('mine:C:/trips/Greece/Kastro cave');
+    expect(resultKey({ id: 'W1', name: 'x', place: '', kind: '', lat: 0, lon: 0 })).toBe('search:W1');
   });
 });

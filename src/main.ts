@@ -18,7 +18,7 @@ import { forgetRecordings, loadRecording, recordingFeature } from './recordings'
 import { loadSettings, saveSettings, settings } from './settings';
 import { Sidebar } from './sidebar';
 import { resultStop, SearchWindow } from './searchWindow';
-import type { SearchResult } from './photon';
+import { resultKey, type SearchResult } from './photon';
 import type { PlanStop } from './plan';
 import { Tooltip } from './tooltip';
 import { GROUPS, NO_GROUP } from './groups';
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     pitch: 0,
     maxPitch: 0,
     dragRotate: false,
-    attributionControl: false, // credited in the sidebar footer instead
+    attributionControl: false, // a personal app: no credit line
   });
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
@@ -94,18 +94,24 @@ async function main(): Promise<void> {
       const c = map.getCenter();
       return { lat: c.lat, lon: c.lng };
     },
+    myPois: () => trips.flatMap((t) => t.pois.map((p) => ({ name: p.name, path: p.path, lat: p.lat, lon: p.lon, trip: t.name }))),
     flyTo,
     openStop: (stop: PlanStop) => {
       flyTo(stop.lat, stop.lon);
-      openOsmPoi(stop.searchName ?? stop.name, stop.lat, stop.lon).catch((err) => setStatus('open', `Could not open: ${err}`));
+      const report = (err: unknown) => setStatus('open', `Could not open: ${err}`);
+      // One of my POIs opens as a click on its marker would; anything else gets the web search.
+      if (stop.key.startsWith('mine:')) openMyPoi(stop.key.slice('mine:'.length)).catch(report);
+      else openOsmPoi(stop.searchName ?? stop.name, stop.lat, stop.lon).catch(report);
     },
     onResults: (results: SearchResult[]) => {
+      // My POIs already on the map (ticked) keep their own marker; the rest get a search marker.
+      const checked = new Set(settings.checked);
       setData(map, SRC_SEARCH, {
         type: 'FeatureCollection',
-        features: results.map((r) => ({
+        features: results.filter((r) => !(r.mine && checked.has(r.id))).map((r) => ({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [r.lon, r.lat] },
-          properties: { key: `search:${r.id}`, name: r.name, searchName: r.name, hover: `${r.name}\n${[r.kind, r.place].filter(Boolean).join(' · ')}` },
+          properties: { key: resultKey(r), name: r.name, searchName: r.mine ? '' : r.name, path: r.mine ? r.id : '', hover: `${r.name}\n${[r.kind, r.place].filter(Boolean).join(' · ')}` },
         })),
       });
     },
@@ -286,7 +292,8 @@ async function main(): Promise<void> {
       case LAYERS.search:
       case LAYERS.osmPois: {
         const [lon, lat] = (top.geometry as Point).coordinates;
-        openOsmPoi(props.searchName ? String(props.searchName) : null, lat, lon).catch(report);
+        if (props.path) openMyPoi(String(props.path)).catch(report);
+        else openOsmPoi(props.searchName ? String(props.searchName) : null, lat, lon).catch(report);
         break;
       }
       case LAYERS.trails:

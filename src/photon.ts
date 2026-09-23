@@ -1,17 +1,43 @@
 /**
  * Place search with Photon (photon.komoot.io): OSM data, made for search-as-you-type. Results are
  * biased towards the map centre. Nominatim is not used here: its policy forbids autocomplete.
+ * My own POIs (from the trips folder) are matched locally by name and listed first.
  */
 
 export interface SearchResult {
+  /** Photon's OSM id (e.g. "W123"), or the POI folder for one of my POIs. */
   id: string;
   name: string;
-  /** Town / region / country, for the list and the web search. */
+  /** Town / region / country (the trip name for my POIs), for the list and the web search. */
   place: string;
-  /** What kind of thing it is, from the OSM tag (e.g. "castle"). */
+  /** What kind of thing it is, from the OSM tag (e.g. "castle"); "my POI" for my own. */
   kind: string;
   lat: number;
   lon: number;
+  /** One of my POIs: `id` is its folder path. */
+  mine?: boolean;
+}
+
+/** The plan key of a result: the same key a right-click on the map gives the POI, so both toggle the same stop. */
+export function resultKey(r: SearchResult): string {
+  return r.mine ? `mine:${r.id}` : `search:${r.id}`;
+}
+
+export interface MyPoi {
+  name: string;
+  path: string;
+  lat: number;
+  lon: number;
+  trip: string;
+}
+
+/** My POIs whose name contains the query (case-insensitive), in folder order. */
+export function matchMyPois(query: string, pois: readonly MyPoi[]): SearchResult[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return pois
+    .filter((p) => p.name.toLowerCase().includes(q))
+    .map((p) => ({ id: p.path, name: p.name, place: p.trip, kind: 'my POI', lat: p.lat, lon: p.lon, mine: true }));
 }
 
 export const SEARCH_DEBOUNCE_MS = 300;
