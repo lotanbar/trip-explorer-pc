@@ -117,6 +117,9 @@ async function main(): Promise<void> {
     },
     onPlanChanged: () => undefined,
     onOpenChanged: () => undefined,
+    // The window takes the panel over: the embedded browser, which sits on top of the panel, goes
+    // (a stop pressed in the plan opens it again, see openStop).
+    reveal: () => closeBrowser().catch(() => undefined),
     setStatus: (m) => setStatus('search', m),
   });
 

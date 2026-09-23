@@ -23,6 +23,8 @@ export interface SearchWindowCallbacks {
   onResults: (results: SearchResult[]) => void;
   onPlanChanged: () => void;
   onOpenChanged: (open: boolean) => void;
+  /** The window must be seen now (it may have been open already): hide whatever covers the panel. */
+  reveal: () => void;
   setStatus: (message: string | null) => void;
 }
 
@@ -120,6 +122,7 @@ export class SearchWindow {
 
   /** Shows the window. `focus` is false when it opens from a right-click, so the map keeps the keyboard. */
   open(query: string, focus = true): void {
+    this.cb.reveal();
     if (!this.win.hidden) return;
     this.win.hidden = false;
     this.panel.classList.add('search-open');
