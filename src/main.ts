@@ -1,5 +1,8 @@
-import { Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
+import { Map as MapLibreMap, setWorkerUrl, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+// MapLibre 6 loads its worker from a file next to its own bundle. Vite does not emit that file in
+// a production build (the map then never loads), so Vite bundles the worker here and its URL is handed over.
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { openMyPoi, openOsmPoi, openPlace, openTrail } from './actions';
 import { browserHistory, closeBrowser, isBrowserOpen } from './browser';
 import { closePanel, initPanel } from './panel';
@@ -26,6 +29,7 @@ const DEFAULT_CENTER: [number, number] = [25.0, 37.3];
 const DEFAULT_ZOOM = 7;
 
 async function main(): Promise<void> {
+  setWorkerUrl(maplibreWorkerUrl);
   await loadSettings();
   const statusMessages = new Map<string, string>();
   initPanel();
