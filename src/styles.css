@@ -308,8 +308,19 @@ button:hover {
 .search-bar {
   margin-top: auto; /* the bottom of the panel, whatever is above it */
   flex: none;
-  padding: 8px 12px;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
   border-top: 1px solid var(--border);
+}
+
+.search-bar input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#sidebar.search-open #plan-open {
+  display: none;
 }
 
 .search-bar input,
@@ -387,10 +398,10 @@ button:hover {
   margin: 0;
   padding: 0 12px 6px;
   list-style: none;
-  flex: 0 1 40%;
+  flex: 0 1 auto;
+  max-height: 50%;
   overflow-y: auto;
   border-bottom: 1px solid var(--border);
-  min-height: 60px;
 }
 
 .plan-list .stop {
@@ -483,6 +494,14 @@ button:hover {
   background: var(--primary);
 }
 
+.result.mine .pin {
+  border-color: var(--amber);
+}
+
+.result.mine.in-plan .pin {
+  background: var(--amber);
+}
+
 .result .text {
   display: flex;
   flex-direction: column;
@@ -497,27 +516,12 @@ button:hover {
 }
 
 .status {
-  padding: 6px 12px;
+  padding: 4px 12px 6px;
   font-size: 12px;
   color: var(--muted);
-  min-height: 26px;
-  border-top: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.credit {
-  padding: 4px 12px 6px;
-  font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.credit a {
-  color: var(--muted);
 }
 
 .status.error {

@@ -12,10 +12,10 @@ export function isBrowserOpen(): boolean {
   return open;
 }
 
-/** How much of the window bottom the browser leaves free: the panel's status and credit strip. */
+/** How much of the window bottom the browser leaves free: the search bar (and the status line under it). */
 export function browserBottomInset(): number {
-  const status = document.getElementById('status');
-  return status ? Math.max(0, window.innerHeight - status.getBoundingClientRect().top) : 0;
+  const bar = document.getElementById('search-bar');
+  return bar ? Math.max(0, window.innerHeight - bar.getBoundingClientRect().top) : 0;
 }
 
 /** Shows `url` over the side panel (opening the panel first if it was closed). */

@@ -26,7 +26,7 @@ Needs Node, Rust (MSVC toolchain on Windows) and the WebView2 runtime (Windows) 
 | `src/overpass.ts` | Endpoints with cooldown, strip fetching, 30-day cache |
 | `src/osmPois.ts`, `src/trails.ts` | The two Overpass features |
 | `src/recordings.ts` | GPX loading and the display-only track cleanup |
-| `src/searchWindow.ts`, `src/photon.ts`, `src/plan.ts`, `src/names.ts` | Search and plan: the window in the side panel, Photon search-as-you-type, the plan model and file format, name rules |
+| `src/searchWindow.ts`, `src/photon.ts`, `src/plan.ts`, `src/names.ts` | Search and plan: the window in the side panel, Photon search-as-you-type plus my own POIs by name, the plan model and file format, name rules |
 | `src/track-cleanup/` | The cleanup module, copied as-is from the reference repo's `track-cleanup` branch (`npm test` inside it) |
 | `src/icons/` | Bundled SVG icons (Maki, Temaki or hand-drawn) |
 
@@ -38,7 +38,7 @@ Deviations from the spec (agreed on 2026-09-22):
   (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
   empty spot on the map brings the panel back.
 - All trail categories use the same plain grey line; only the repeated icon differs (no dots, crossbars or ticks).
-- No zoom buttons, scale bar or attribution control on the map: pinch / ctrl+scroll zoom, credit line in the panel footer.
+- No zoom buttons, scale bar or attribution control on the map: pinch / ctrl+scroll zoom.
 
 Settings live in `%APPDATA%\com.lotanbar.tripexplorer\settings.json` (Windows) or
 `$XDG_CONFIG_HOME/com.lotanbar.tripexplorer` (Linux); the Overpass cache in the matching cache folder.

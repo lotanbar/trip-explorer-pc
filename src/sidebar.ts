@@ -55,8 +55,7 @@ export class Sidebar {
         </div>
         <div id="trails" class="toggle-list"></div>
       </section>
-      <div id="status" class="status"></div>
-      <div class="credit">Map © <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors · Terrain: Mapzen/Tilezen on AWS</div>
+      <div id="status" class="status" hidden></div>
     `;
     this.treeEl = root.querySelector('#tree')!;
     this.rootLabel = root.querySelector('#root-label')!;
@@ -73,6 +72,7 @@ export class Sidebar {
 
   setStatus(message: string | null): void {
     this.statusEl.textContent = message ?? '';
+    this.statusEl.hidden = !message;
   }
 
   private setRootLabel(root: string | null): void {
