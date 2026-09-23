@@ -29,6 +29,16 @@ export interface TripInfo {
 
 export const scanTrips = (root: string) => invoke<TripInfo[]>('scan_trips', { root });
 export const readText = (path: string) => invoke<string>('read_text', { path });
+
+export interface PlanFile {
+  name: string;
+  path: string;
+}
+
+export const listPlans = (root: string) => invoke<PlanFile[]>('list_plans', { root });
+/** Writes trips/plans/<name>.txt; refuses an existing file unless `overwrite`. Returns the file path. */
+export const savePlan = (root: string, name: string, text: string, overwrite: boolean) =>
+  invoke<string>('save_plan', { root, name, text, overwrite });
 export const loadSettingsJson = () => invoke<string | null>('load_settings');
 export const saveSettingsJson = (json: string) => invoke<void>('save_settings', { json });
 

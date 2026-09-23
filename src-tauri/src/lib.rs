@@ -1,5 +1,6 @@
 //! Trip Explorer PC backend: reads the trips folder tree, persists settings and keeps the
-//! on-disk Overpass cache. Nothing here ever deletes or changes a file inside the trips folder.
+//! on-disk Overpass cache, and writes plan files into `trips/plans/`. Nothing here ever deletes a
+//! file inside the trips folder; the only writes are plan files, on Save.
 
 use serde::Serialize;
 use std::fs;
@@ -132,12 +133,58 @@ fn scan_trips(root: String) -> Result<Vec<Trip>, String> {
     let mut trips = Vec::new();
     for entry in fs::read_dir(&root).map_err(|e| e.to_string())?.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        if path.is_dir() && !entry.file_name().eq_ignore_ascii_case(PLANS_FOLDER) {
             trips.push(scan_trip(&path));
         }
     }
     trips.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(trips)
+}
+
+/// The folder inside `trips/` that holds plan files; it is not a trip.
+const PLANS_FOLDER: &str = "plans";
+
+#[derive(Serialize)]
+struct PlanFile {
+    name: String,
+    path: String,
+}
+
+fn plans_dir(root: &str) -> PathBuf {
+    PathBuf::from(root).join(PLANS_FOLDER)
+}
+
+/// Every `.txt` file in `trips/plans/`, by name (case-insensitive). No folder → no plans.
+#[tauri::command]
+fn list_plans(root: String) -> Result<Vec<PlanFile>, String> {
+    let mut plans = Vec::new();
+    if let Ok(entries) = fs::read_dir(plans_dir(&root)) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file = entry.file_name().to_string_lossy().to_string();
+            if path.is_file() && file.to_lowercase().ends_with(".txt") {
+                plans.push(PlanFile { name: file[..file.len() - 4].to_string(), path: path.to_string_lossy().to_string() });
+            }
+        }
+    }
+    plans.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(plans)
+}
+
+/// Writes `trips/plans/<name>.txt` (creating `plans/` if needed). An existing file is refused
+/// unless `overwrite` is set (the plan was loaded from that very file). Returns the file's path.
+#[tauri::command]
+fn save_plan(root: String, name: String, text: String, overwrite: bool) -> Result<String, String> {
+    let dir = plans_dir(&root);
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+    let file = dir.join(format!("{}.txt", name));
+    if file.exists() && !overwrite {
+        return Err(format!("A plan named \"{}\" already exists.", name));
+    }
+    let tmp = dir.join(format!("{}.txt.tmp", name));
+    fs::write(&tmp, text).map_err(|e| format!("{}: {}", tmp.display(), e))?;
+    fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))?;
+    Ok(file.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -575,6 +622,8 @@ pub fn run() {
             browser_close,
             browser_history,
             scan_trips,
+            list_plans,
+            save_plan,
             read_text,
             load_settings,
             save_settings,

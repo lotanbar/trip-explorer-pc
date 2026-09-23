@@ -1,6 +1,7 @@
 /**
  * The overlay sources and layers: recordings, my POIs, OSM POIs and trail lines, plus the marker
- * and line-pattern images they use. Layer order, bottom to top: trails, recordings, OSM POIs, my POIs.
+ * and line-pattern images they use. Layer order, bottom to top: trails, recordings, OSM POIs, my POIs,
+ * search results.
  */
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
@@ -14,6 +15,10 @@ export const SRC_TRAILS = 'trails';
 export const SRC_RECORDINGS = 'recordings';
 export const SRC_OSM_POIS = 'osm-pois';
 export const SRC_MY_POIS = 'my-pois';
+export const SRC_SEARCH = 'search-results';
+/** The search-result pin: the app's blue, a plain dot in the head. */
+export const SEARCH_COLOR = '#2196F3';
+export const SEARCH_ICON = 'search|result';
 
 export const LAYERS = {
   trails: 'trails-lines',
@@ -23,6 +28,8 @@ export const LAYERS = {
   osmPois: 'osm-poi-symbols',
   myPois: 'my-poi-symbols',
   myPoiLabels: 'my-poi-labels',
+  search: 'search-symbols',
+  searchLabels: 'search-labels',
 };
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -33,6 +40,7 @@ export async function addMarkerImages(map: MapLibreMap): Promise<void> {
     jobs.push(buildMarker(group.icon, group.color, POI_OUTLINE, 'squircle').then((img) => { map.addImage(`mine|${group.id}`, img.data, { pixelRatio: img.pixelRatio }); }));
     jobs.push(buildMarker(group.icon, group.color, POI_OUTLINE, 'circle').then((img) => { map.addImage(`osm|${group.id}`, img.data, { pixelRatio: img.pixelRatio }); }));
   }
+  jobs.push(buildMarker('marker', SEARCH_COLOR, POI_OUTLINE, 'circle').then((img) => { map.addImage(SEARCH_ICON, img.data, { pixelRatio: img.pixelRatio }); }));
   for (const cat of TRAIL_CATEGORIES) {
     jobs.push(buildLineIcon(cat.icon).then((img) => { map.addImage(`trail|${cat.icon}`, img.data, { pixelRatio: img.pixelRatio }); }));
   }
@@ -40,7 +48,7 @@ export async function addMarkerImages(map: MapLibreMap): Promise<void> {
 }
 
 export function addOverlayLayers(map: MapLibreMap): void {
-  for (const id of [SRC_TRAILS, SRC_RECORDINGS, SRC_OSM_POIS, SRC_MY_POIS]) {
+  for (const id of [SRC_TRAILS, SRC_RECORDINGS, SRC_OSM_POIS, SRC_MY_POIS, SRC_SEARCH]) {
     map.addSource(id, { type: 'geojson', data: EMPTY });
   }
   // Route lines sit under the base map's labels (place names stay readable); icons and markers on top.
@@ -118,6 +126,32 @@ export function addOverlayLayers(map: MapLibreMap): void {
     type: 'symbol',
     source: SRC_MY_POIS,
     minzoom: 11,
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 13,
+      'text-anchor': 'top',
+      'text-offset': [0, 0.4],
+    },
+    paint: { 'text-color': '#FFFFFF', 'text-halo-color': '#000000', 'text-halo-width': 1 },
+  });
+
+  // ── Search results: blue pins, on top of everything, while the search window is open ──
+  map.addLayer({
+    id: LAYERS.search,
+    type: 'symbol',
+    source: SRC_SEARCH,
+    layout: {
+      'icon-image': SEARCH_ICON,
+      'icon-anchor': 'bottom',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  });
+  map.addLayer({
+    id: LAYERS.searchLabels,
+    type: 'symbol',
+    source: SRC_SEARCH,
     layout: {
       'text-field': ['get', 'name'],
       'text-font': ['Noto Sans Regular'],

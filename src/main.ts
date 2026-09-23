@@ -7,13 +7,16 @@ import { installMapGestures } from './gestures';
 import type { FeatureCollection, Point } from 'geojson';
 import { scanTrips, cacheEvict, CACHE_TTL_MS, type TripInfo } from './backend';
 import { groupForFile } from './groups';
-import { addMarkerImages, addOverlayLayers, LAYERS, lastData, setData, SRC_MY_POIS, SRC_OSM_POIS, SRC_RECORDINGS, SRC_TRAILS } from './mapLayers';
+import { addMarkerImages, addOverlayLayers, LAYERS, lastData, setData, SRC_MY_POIS, SRC_OSM_POIS, SRC_RECORDINGS, SRC_SEARCH, SRC_TRAILS } from './mapLayers';
 import { loadMapStyle, placeLabelLayerIds } from './mapStyle';
 import { osmPoiStore, osmPoisGeoJson, OSM_POI_MIN_ZOOM } from './osmPois';
 import { atLeastKm, expanded, type Bounds } from './overpass';
 import { forgetRecordings, loadRecording, recordingFeature } from './recordings';
 import { loadSettings, saveSettings, settings } from './settings';
 import { Sidebar } from './sidebar';
+import { resultStop, SearchWindow } from './searchWindow';
+import type { SearchResult } from './photon';
+import type { PlanStop } from './plan';
 import { Tooltip } from './tooltip';
 import { GROUPS, NO_GROUP } from './groups';
 import { TRAIL_CATEGORIES, TRAILS_MIN_AREA_KM, TRAILS_MIN_ZOOM, trailStore, trailsGeoJson } from './trails';
@@ -67,7 +70,7 @@ async function main(): Promise<void> {
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
   const tooltip = new Tooltip(mapEl);
-  if (import.meta.env.DEV) (window as unknown as { __te: unknown }).__te = { map, settings, lastData, actions: { openMyPoi, openOsmPoi, openPlace, openTrail } };
+  if (import.meta.env.DEV) (window as unknown as { __te: unknown }).__te = { map, settings, lastData, actions: { openMyPoi, openOsmPoi, openPlace, openTrail }, search: () => search };
 
   // The base style references a few sprite images it does not ship; blank them instead of warning.
   map.on('styleimagemissing', (e: { id: string }) => {
@@ -76,6 +79,36 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => map.once('load', () => resolve()));
   await addMarkerImages(map);
   addOverlayLayers(map);
+
+  // ── Search and plan ──
+
+  /** A brief zoom-out / zoom-in move to the point (MapLibre's flyTo arc). */
+  const flyTo = (lat: number, lon: number) => map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 14), speed: 1.6 });
+
+  const search = new SearchWindow(document.getElementById('sidebar')!, {
+    near: () => {
+      const c = map.getCenter();
+      return { lat: c.lat, lon: c.lng };
+    },
+    flyTo,
+    openStop: (stop: PlanStop) => {
+      flyTo(stop.lat, stop.lon);
+      openOsmPoi(stop.searchName ?? stop.name, stop.lat, stop.lon).catch((err) => setStatus('open', `Could not open: ${err}`));
+    },
+    onResults: (results: SearchResult[]) => {
+      setData(map, SRC_SEARCH, {
+        type: 'FeatureCollection',
+        features: results.map((r) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [r.lon, r.lat] },
+          properties: { key: `search:${r.id}`, name: r.name, searchName: r.name, hover: `${r.name}\n${[r.kind, r.place].filter(Boolean).join(' · ')}` },
+        })),
+      });
+    },
+    onPlanChanged: () => undefined,
+    onOpenChanged: () => undefined,
+    setStatus: (m) => setStatus('search', m),
+  });
 
   // ── Trips and the checked items ──
 
@@ -205,7 +238,7 @@ async function main(): Promise<void> {
   // ── Hover and click ──
 
   const placeLayers = placeLabelLayerIds(map.getStyle());
-  const hoverLayers = [LAYERS.myPois, LAYERS.osmPois, LAYERS.recordings, LAYERS.recordingsIncomplete, LAYERS.trails, ...placeLayers];
+  const hoverLayers = [LAYERS.search, LAYERS.myPois, LAYERS.osmPois, LAYERS.recordings, LAYERS.recordingsIncomplete, LAYERS.trails, ...placeLayers];
   const isPlace = (layerId: string) => placeLayers.includes(layerId);
   /** Local name of a base-map place label (what the search uses); English shown on hover. */
   const placeLocalName = (props: Record<string, unknown>) => (props.name ?? props['name:latin'] ?? null) as string | null;
@@ -246,6 +279,7 @@ async function main(): Promise<void> {
       case LAYERS.myPois:
         openMyPoi(String(props.path)).catch(report);
         break;
+      case LAYERS.search:
       case LAYERS.osmPois: {
         const [lon, lat] = (top.geometry as Point).coordinates;
         openOsmPoi(props.searchName ? String(props.searchName) : null, lat, lon).catch(report);
@@ -258,6 +292,31 @@ async function main(): Promise<void> {
         if (isPlace(top.layer.id)) openPlace(placeLocalName(props), e.lngLat.lat, e.lngLat.lng).catch(report);
     }
   });
+
+  // Right-click on a POI or a search result: add it to the end of the plan, or remove it again.
+  map.on('contextmenu', (e: MapMouseEvent) => {
+    e.preventDefault();
+    const features = map.queryRenderedFeatures(
+      [[e.point.x - 4, e.point.y - 4], [e.point.x + 4, e.point.y + 4]],
+      { layers: [LAYERS.search, LAYERS.myPois, LAYERS.osmPois] },
+    );
+    const top = features[0];
+    if (!top) return;
+    const props = top.properties ?? {};
+    const [lon, lat] = (top.geometry as Point).coordinates;
+    const name = String(props.name ?? '');
+    let stop: PlanStop | null = null;
+    if (top.layer.id === LAYERS.myPois) stop = { key: `mine:${props.path}`, lat, lon, name };
+    else if (top.layer.id === LAYERS.osmPois && name) stop = { key: `osm:${props.id}`, lat, lon, name, searchName: String(props.searchName ?? name) };
+    else if (top.layer.id === LAYERS.search) {
+      const r = search.resultByKey(String(props.key));
+      stop = r ? resultStop(r) : { key: String(props.key), lat, lon, name };
+    }
+    if (!stop) return;
+    search.toggle(stop);
+    tooltip.hide();
+  });
+  mapEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeBrowser().catch((err) => setStatus('open', `Could not close: ${err}`));

@@ -1,6 +1,7 @@
 /** Everything remembered between sessions, saved as one JSON file by the backend. */
 
 import { loadSettingsJson, saveSettingsJson } from './backend';
+import { EMPTY_PLAN, type PlanDraft } from './plan';
 
 export interface Camera {
   lng: number;
@@ -22,6 +23,10 @@ export interface Settings {
   /** Side panel: shown or closed, and its width in CSS px (null = the minimum). */
   panelOpen: boolean;
   panelWidth: number | null;
+  /** The plan being built: written to plans/ only on Save. */
+  plan: PlanDraft;
+  /** The search/plan window shown instead of the panel's controls. */
+  searchOpen: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -34,6 +39,8 @@ const DEFAULTS: Settings = {
   camera: null,
   panelOpen: true,
   panelWidth: null,
+  plan: EMPTY_PLAN,
+  searchOpen: false,
 };
 
 export let settings: Settings = { ...DEFAULTS };
@@ -42,6 +49,7 @@ export async function loadSettings(): Promise<Settings> {
   try {
     const json = await loadSettingsJson();
     if (json) settings = { ...DEFAULTS, ...JSON.parse(json) };
+    settings.plan = { ...EMPTY_PLAN, ...settings.plan, stops: Array.isArray(settings.plan?.stops) ? settings.plan.stops : [] };
   } catch (e) {
     console.warn('Settings could not be read, starting fresh', e);
   }

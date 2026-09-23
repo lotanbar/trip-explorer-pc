@@ -19,6 +19,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -297,6 +301,197 @@ button:hover {
   font-size: 10px;
   color: var(--muted);
   margin-left: 2px;
+}
+
+/* ── Search and plan ── */
+
+.search-bar {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.search-bar input,
+.plan-name {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font: inherit;
+}
+
+.search-bar input:focus,
+.plan-name:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+#sidebar.search-open .panel-section {
+  display: none;
+}
+
+.search-window {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.search-window .section-head {
+  padding: 10px 12px 6px;
+  margin: 0;
+}
+
+.plan-name {
+  width: 120px;
+  padding: 2px 6px;
+}
+
+.plans-menu-wrap {
+  position: relative;
+}
+
+.plans-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  min-width: 160px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.plans-menu .item {
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.plans-menu button.item:hover {
+  background: var(--surface);
+}
+
+.plan-list {
+  margin: 0;
+  padding: 0 12px 6px;
+  list-style: none;
+  flex: 0 1 40%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+  min-height: 60px;
+}
+
+.plan-list .stop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.plan-list .stop:hover {
+  background: var(--surface-2);
+}
+
+.plan-list .stop.dragging {
+  opacity: 0.4;
+}
+
+.plan-list .stop.drop-target {
+  box-shadow: inset 0 2px 0 var(--primary);
+}
+
+.plan-list .num {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plan-list .name,
+.result .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-list .empty {
+  padding: 4px;
+  white-space: normal;
+}
+
+.results-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px 4px;
+}
+
+.results-head span {
+  font-size: 12px;
+}
+
+.result-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0 12px 6px;
+  min-height: 0;
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.result:hover {
+  background: var(--surface-2);
+}
+
+.result .pin {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+}
+
+.result.in-plan .pin {
+  background: var(--primary);
+}
+
+.result .text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.result .sub {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status {
