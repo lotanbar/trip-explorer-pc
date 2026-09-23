@@ -292,6 +292,10 @@ const BROWSER_INIT_SCRIPT: &str = r#"
     (document.head || document.documentElement).appendChild(s);
   }
   function hideHeaderRow() {
+    // The Google logo floats above the search box and peeks out over it; drop it with its box.
+    var logo = document.getElementById('logo');
+    var logoBox = logo && logo.parentElement;
+    if (logoBox && !logoBox.dataset.teHidden) { logoBox.dataset.teHidden = '1'; logoBox.style.display = 'none'; }
     var q = document.querySelector('[name="q"]');
     var gear = document.querySelector('#og-te, [aria-label="Settings"]');
     if (!gear || !q) return;
@@ -322,12 +326,12 @@ const BROWSER_INIT_SCRIPT: &str = r#"
   }
   // The "AI Overview" title row: the ancestor of that heading that sits directly in the overview's
   // content column (its parent is tall and has several children).
+  // Google re-renders the overview while it streams in, so this is re-checked on every change.
   function hideOverviewTitle() {
     var headings = document.querySelectorAll('#m-x-content [role="heading"]');
     for (var i = 0; i < headings.length; i++) {
       var h = headings[i];
-      if (h.textContent.trim() !== 'AI Overview' || h.dataset.teHidden) continue;
-      h.dataset.teHidden = '1';
+      if (h.textContent.trim() !== 'AI Overview' || h.getBoundingClientRect().height === 0) continue;
       var e = h;
       while (e.parentElement && !(e.parentElement.children.length > 1 && e.parentElement.getBoundingClientRect().height > 100)) e = e.parentElement;
       e.style.display = 'none';
