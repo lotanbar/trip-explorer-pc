@@ -319,10 +319,6 @@ button:hover {
   min-width: 0;
 }
 
-#sidebar.search-open #plan-open {
-  display: none;
-}
-
 .search-bar input,
 .plan-name {
   width: 100%;
@@ -351,9 +347,28 @@ button:hover {
   min-height: 0;
 }
 
-.search-window .section-head {
-  padding: 10px 12px 6px;
+.plan-section {
+  flex: 0 1 auto;
+  max-height: 55%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.plan-section .section-head {
+  padding: 8px 12px 6px;
   margin: 0;
+}
+
+.plan-section .icon-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+}
+
+.plan-section .plan-list {
+  padding-bottom: 8px;
 }
 
 .plan-name {
@@ -363,12 +378,19 @@ button:hover {
 
 .plans-menu-wrap {
   position: relative;
+  flex: none;
+  display: flex;
+}
+
+#plans-button {
+  white-space: nowrap;
 }
 
 .plans-menu {
   position: absolute;
   right: 0;
-  top: 100%;
+  bottom: 100%;
+  margin-bottom: 4px;
   z-index: 20;
   min-width: 160px;
   max-height: 260px;
@@ -394,14 +416,24 @@ button:hover {
   background: var(--surface);
 }
 
+.plans-menu .item.current {
+  color: var(--primary);
+}
+
+.plans-menu .divider {
+  flex: none;
+  height: 1px;
+  margin: 3px 0;
+  background: var(--border);
+}
+
 .plan-list {
   margin: 0;
   padding: 0 12px 6px;
   list-style: none;
   flex: 0 1 auto;
-  max-height: 50%;
+  min-height: 0;
   overflow-y: auto;
-  border-bottom: 1px solid var(--border);
 }
 
 .plan-list .stop {
@@ -455,7 +487,11 @@ button:hover {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 8px 12px 4px;
+  padding: 10px 12px 4px;
+}
+
+.results-head .icon-button {
+  margin-left: auto;
 }
 
 .results-head span {
@@ -544,3 +580,47 @@ button:hover {
   max-width: 320px;
 }
 
+
+/* ── Dialog ── */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.dialog {
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  padding: 14px 16px 12px;
+}
+
+.dialog .message {
+  margin: 0 0 14px;
+  line-height: 1.45;
+}
+
+.dialog .actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+button.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  border-color: var(--border);
+}

@@ -29,6 +29,8 @@ export interface TripInfo {
 
 export const scanTrips = (root: string) => invoke<TripInfo[]>('scan_trips', { root });
 export const readText = (path: string) => invoke<string>('read_text', { path });
+/** Writes a file the user picked (GPX export). */
+export const writeText = (path: string, text: string) => invoke<void>('write_text', { path, text });
 
 export interface PlanFile {
   name: string;

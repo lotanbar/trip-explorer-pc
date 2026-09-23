@@ -23,7 +23,7 @@ export interface Settings {
   /** Side panel: shown or closed, and its width in CSS px (null = the minimum). */
   panelOpen: boolean;
   panelWidth: number | null;
-  /** The plan being built: written to plans/ only on Save. */
+  /** The temp plan: written to plans/ only on Save. Saved plans are shown from their files. */
   plan: PlanDraft;
   /** The search/plan window shown instead of the panel's controls. */
   searchOpen: boolean;
@@ -49,7 +49,8 @@ export async function loadSettings(): Promise<Settings> {
   try {
     const json = await loadSettingsJson();
     if (json) settings = { ...DEFAULTS, ...JSON.parse(json) };
-    settings.plan = { ...EMPTY_PLAN, ...settings.plan, stops: Array.isArray(settings.plan?.stops) ? settings.plan.stops : [] };
+    // The temp plan never belongs to a file (older versions kept a loaded plan here).
+    settings.plan = { ...EMPTY_PLAN, ...settings.plan, file: null, stops: Array.isArray(settings.plan?.stops) ? settings.plan.stops : [] };
   } catch (e) {
     console.warn('Settings could not be read, starting fresh', e);
   }

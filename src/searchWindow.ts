@@ -1,11 +1,18 @@
 /**
  * The search/plan window: shown in the side panel in place of its controls when the search bar
- * (always at the bottom of the panel) is used or a POI is right-clicked. Top to bottom: the plan's
- * stops (numbered, draggable), the search results, the search bar. Right-click adds a result to the
- * plan or removes a stop; a click flies to it.
+ * (always at the bottom of the panel) is used, a plan is picked from the Plans menu or a POI is
+ * right-clicked. Top to bottom: the search results, the plan's stops (numbered, draggable) with
+ * GPX import/export, the search bar with the Plans menu. Right-click adds a result to the plan or
+ * removes a stop; a click flies to it.
+ *
+ * There is one temp plan, kept in the settings until it is saved. A saved plan can be shown in its
+ * place; its edits stay in memory until Save, and leaving it with unsaved edits asks first.
  */
 
-import { listPlans, readText, savePlan } from './backend';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { listPlans, readText, savePlan, writeText } from './backend';
+import { ask } from './dialog';
+import { gpxToStops, planToGpx } from './gpx';
 import { checkName } from './names';
 import { LiveSearch, matchMyPois, resultKey, type MyPoi, type SearchResult } from './photon';
 import { EMPTY_PLAN, moveStop, parsePlanFile, planFileText, toggleStop, type PlanStop } from './plan';
@@ -28,6 +35,23 @@ export interface SearchWindowCallbacks {
   setStatus: (message: string | null) => void;
 }
 
+/** A saved plan shown instead of the temp plan. `saved` is what its file holds. */
+interface ShownPlan {
+  file: string;
+  name: string;
+  stops: PlanStop[];
+  saved: { name: string; stops: PlanStop[] };
+  dirty: boolean;
+}
+
+const GPX_FILTER = [{ name: 'GPX', extensions: ['gpx'] }];
+
+const svg = (body: string) =>
+  `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+/** Arrow into a tray / arrow out of a tray. */
+const ICON_IMPORT = svg('<path d="M12 3v12M7 10l5 5 5-5M4 17v3h16v-3"/>');
+const ICON_EXPORT = svg('<path d="M12 15V3M7 8l5-5 5 5M4 17v3h16v-3"/>');
+
 function baseName(path: string): string {
   return path.replace(/^.*[\\/]/, '');
 }
@@ -47,31 +71,39 @@ export class SearchWindow {
   private readonly plansMenu: HTMLElement;
   private results: SearchResult[] = [];
   private readonly live: LiveSearch;
+  /** The saved plan shown, or null for the temp plan. */
+  private shown: ShownPlan | null = null;
 
   constructor(private readonly panel: HTMLElement, private readonly cb: SearchWindowCallbacks) {
-    // Both sit above the status line. The bar is one element, always shown: last in the panel when the
-    // window is closed, under the window when open; it stays visible under the embedded browser too.
+    // Both sit above the status line. The bar is one element, always shown, with the Plans menu in it:
+    // last in the panel when the window is closed, under the window when open; it stays visible under
+    // the embedded browser too.
     panel.querySelector('#status')!.insertAdjacentHTML('beforebegin', `
       <div id="search-window" class="search-window" hidden>
-        <div class="section-head">
-          <h2>Plan</h2>
-          <div class="actions">
-            <input id="plan-name" class="plan-name" type="text" placeholder="Plan name" autocomplete="off" spellcheck="false">
-            <button id="plan-save" title="Write trips/plans/&lt;name&gt;.txt">Save</button>
-            <div class="plans-menu-wrap">
-              <button id="plans-button" title="Load a saved plan">Plans ▾</button>
-              <div id="plans-menu" class="plans-menu" hidden></div>
-            </div>
-            <button id="search-close" class="icon-button" title="Close, back to the controls" aria-label="Close">×</button>
-          </div>
+        <div class="results-head">
+          <h2>Results</h2><span id="results-note" class="muted"></span>
+          <button id="search-close" class="icon-button" title="Close, back to the controls" aria-label="Close">×</button>
         </div>
-        <ol id="plan-list" class="plan-list"></ol>
-        <div class="results-head"><h2>Results</h2><span id="results-note" class="muted"></span></div>
         <div id="result-list" class="result-list"></div>
+        <div class="plan-section">
+          <div class="section-head">
+            <h2 id="plan-title">Plan</h2>
+            <div class="actions">
+              <input id="plan-name" class="plan-name" type="text" placeholder="Plan name" autocomplete="off" spellcheck="false">
+              <button id="plan-save" title="Write trips/plans/&lt;name&gt;.txt">Save</button>
+              <button id="plan-import" class="icon-button" title="Import GPX: add a file's waypoints to this plan" aria-label="Import GPX">${ICON_IMPORT}</button>
+              <button id="plan-export" class="icon-button" title="Export GPX: write this plan as a GPX file" aria-label="Export GPX">${ICON_EXPORT}</button>
+            </div>
+          </div>
+          <ol id="plan-list" class="plan-list"></ol>
+        </div>
       </div>
       <div id="search-bar" class="search-bar">
         <input id="search-input" type="search" placeholder="Search places…" autocomplete="off" spellcheck="false">
-        <button id="plan-open" title="Open the search and plan window">Plans</button>
+        <div class="plans-menu-wrap">
+          <button id="plans-button" title="New plan, the current plan or a saved one">Plans ▴</button>
+          <div id="plans-menu" class="plans-menu" hidden></div>
+        </div>
       </div>
     `);
     this.win = panel.querySelector('#search-window')!;
@@ -86,13 +118,19 @@ export class SearchWindow {
       this.open(this.input.value);
       this.live.update(this.input.value, cb.near);
     });
-    panel.querySelector('#search-close')!.addEventListener('click', () => this.close());
-    panel.querySelector('#plan-open')!.addEventListener('click', () => this.open(this.input.value));
+    panel.querySelector('#search-close')!.addEventListener('click', () => void this.requestClose());
     this.nameInput.addEventListener('input', () => {
-      settings.plan.name = this.nameInput.value;
-      saveSettings();
+      if (this.shown) {
+        this.shown.name = this.nameInput.value;
+        this.markDirty();
+      } else {
+        settings.plan.name = this.nameInput.value;
+        saveSettings();
+      }
     });
     panel.querySelector('#plan-save')!.addEventListener('click', () => void this.save());
+    panel.querySelector('#plan-import')!.addEventListener('click', () => void this.importGpx());
+    panel.querySelector('#plan-export')!.addEventListener('click', () => void this.exportGpx());
     panel.querySelector('#plans-button')!.addEventListener('click', (e) => {
       e.stopPropagation();
       void this.togglePlansMenu();
@@ -111,7 +149,6 @@ export class SearchWindow {
       this.setResults(all, query ? (all.length ? null : 'Nothing found') : null);
     });
 
-    this.nameInput.value = settings.plan.name;
     this.renderPlan();
     if (settings.searchOpen) this.open('');
   }
@@ -150,6 +187,11 @@ export class SearchWindow {
     this.cb.onOpenChanged(false);
   }
 
+  /** The × : closes, unless a saved plan with unsaved edits is shown and the question is cancelled. */
+  private async requestClose(): Promise<void> {
+    if (await this.leaveShown()) this.close();
+  }
+
   // ── Results ──
 
   private setResults(results: SearchResult[], note: string | null): void {
@@ -182,32 +224,57 @@ export class SearchWindow {
 
   // ── Plan ──
 
+  /** The stops of the plan shown: the temp plan or a saved one. */
   get stops(): readonly PlanStop[] {
-    return settings.plan.stops;
+    return this.shown ? this.shown.stops : settings.plan.stops;
   }
 
-  inPlan(key: string): boolean {
-    return settings.plan.stops.some((s) => s.key === key);
-  }
-
-  /** Adds the stop to the end of the plan, or removes it when it is already there. */
-  toggle(stop: PlanStop): void {
-    settings.plan.stops = toggleStop(settings.plan.stops, stop);
-    this.open('', false);
+  private setStops(stops: PlanStop[]): void {
+    if (this.shown) {
+      this.shown.stops = stops;
+      this.markDirty();
+    } else {
+      settings.plan.stops = stops;
+      saveSettings();
+    }
     this.planChanged();
   }
 
+  private markDirty(): void {
+    const s = this.shown!;
+    s.dirty = s.name !== s.saved.name || s.stops.length !== s.saved.stops.length || s.stops.some((x, i) => x.key !== s.saved.stops[i].key);
+    this.renderTitle();
+  }
+
+  inPlan(key: string): boolean {
+    return this.stops.some((s) => s.key === key);
+  }
+
+  /** Adds the stop to the end of the plan shown, or removes it when it is already there. */
+  toggle(stop: PlanStop): void {
+    this.setStops(toggleStop(this.stops, stop));
+    this.open('', false);
+  }
+
   private planChanged(): void {
-    saveSettings();
     this.renderPlan();
     this.markInPlan();
     this.cb.onPlanChanged();
   }
 
-  /** The list grows with the stops (up to half the window) and is not shown at all while the plan is empty. */
+  private renderTitle(): void {
+    const title = this.panel.querySelector('#plan-title')!;
+    title.textContent = this.shown ? (this.shown.dirty ? 'Saved plan •' : 'Saved plan') : 'Temp plan';
+    (title as HTMLElement).title = this.shown ? (this.shown.dirty ? `${this.shown.file} (unsaved changes)` : this.shown.file) : 'Not saved yet: kept until Save or New plan';
+  }
+
+  /** The list grows with the stops (up to about half the window) and is not shown at all while the plan is empty. */
   private renderPlan(): void {
+    this.renderTitle();
+    this.nameInput.value = this.shown ? this.shown.name : settings.plan.name;
+    this.panel.querySelector<HTMLButtonElement>('#plan-export')!.disabled = this.stops.length === 0;
     this.planList.innerHTML = '';
-    const stops = settings.plan.stops;
+    const stops = this.stops;
     this.planList.hidden = stops.length === 0;
     if (stops.length === 0) return;
     stops.forEach((stop, i) => {
@@ -240,13 +307,12 @@ export class SearchWindow {
         e.preventDefault();
         li.classList.remove('drop-target');
         const from = Number(e.dataTransfer?.getData('text/plain'));
-        if (Number.isInteger(from) && from !== i) {
-          settings.plan.stops = moveStop(settings.plan.stops, from, i);
-          this.planChanged();
-        }
+        if (Number.isInteger(from) && from !== i) this.setStops(moveStop(this.stops, from, i));
       });
       this.planList.appendChild(li);
     });
+    // Keep the newest stop in view.
+    this.planList.scrollTop = this.planList.scrollHeight;
   }
 
   private markInPlan(): void {
@@ -255,43 +321,78 @@ export class SearchWindow {
     }
   }
 
-  private async save(): Promise<void> {
+  /** Saves the plan shown. The temp plan becomes a saved plan (and a new, empty temp plan starts). */
+  private async save(): Promise<boolean> {
     const root = settings.root;
     if (!root) {
       this.cb.setStatus('Choose the trips folder first');
-      return;
+      return false;
     }
     const name = this.nameInput.value.trim();
-    const plan = settings.plan;
-    if (plan.stops.length === 0) {
+    const stops = [...this.stops];
+    if (stops.length === 0) {
       this.cb.setStatus('The plan is empty');
-      return;
+      return false;
     }
-    // A name already used is refused, unless the plan was loaded from that very file.
+    // A name already used is refused, unless it is the shown plan's own file.
+    const file = this.shown?.file ?? null;
     let taken: string[] = [];
     try {
-      taken = (await listPlans(root)).filter((p) => p.path !== plan.file).map((p) => p.name);
+      taken = (await listPlans(root)).filter((p) => p.path !== file).map((p) => p.name);
     } catch (e) {
       this.cb.setStatus(String(e));
-      return;
+      return false;
     }
     const problem = checkName(name, taken);
     if (problem) {
       this.cb.setStatus(problem);
-      return;
+      return false;
     }
     try {
-      // Same name as the loaded file: overwrite it. A new name writes a new file (refused above if taken).
-      const overwrite = plan.file !== null && baseName(plan.file).toLowerCase() === `${name.toLowerCase()}.txt`;
-      const path = await savePlan(root, name, planFileText(plan.stops), overwrite);
+      // Same name as the shown file: overwrite it. A new name writes a new file (refused above if taken);
+      // the old file stays.
+      const overwrite = file !== null && baseName(file).toLowerCase() === `${name.toLowerCase()}.txt`;
+      const path = await savePlan(root, name, planFileText(stops), overwrite);
       this.cb.setStatus(`Saved ${path}`);
-      settings.plan = { ...EMPTY_PLAN, stops: [] };
-      this.nameInput.value = '';
+      if (!this.shown) {
+        settings.plan = { ...EMPTY_PLAN, stops: [] };
+        saveSettings();
+      }
+      this.shown = { file: path, name, stops, saved: { name, stops }, dirty: false };
       this.planChanged();
+      return true;
     } catch (e) {
       this.cb.setStatus(String(e));
+      return false;
     }
   }
+
+  /**
+   * Before the shown saved plan is left: asks what to do with unsaved edits. False when the user
+   * cancels (or Save fails), so nothing changes.
+   */
+  private async leaveShown(): Promise<boolean> {
+    const s = this.shown;
+    if (!s || !s.dirty) return true;
+    const choice = await ask(
+      `"${s.saved.name}" has changes that are not saved.`,
+      [
+        { label: 'Save', value: 'save' as const, primary: true },
+        { label: 'Discard changes', value: 'discard' as const },
+        { label: 'Cancel', value: 'cancel' as const },
+      ],
+      'cancel' as const,
+    );
+    if (choice === 'cancel') return false;
+    if (choice === 'save') return this.save();
+    s.name = s.saved.name;
+    s.stops = [...s.saved.stops];
+    s.dirty = false;
+    this.planChanged();
+    return true;
+  }
+
+  // ── Plans menu ──
 
   private async togglePlansMenu(): Promise<void> {
     if (!this.plansMenu.hidden) {
@@ -299,38 +400,117 @@ export class SearchWindow {
       return;
     }
     const root = settings.root;
-    if (!root) {
-      this.cb.setStatus('Choose the trips folder first');
-      return;
+    let plans: { name: string; path: string }[] = [];
+    if (root) {
+      try {
+        plans = await listPlans(root);
+      } catch (e) {
+        this.cb.setStatus(String(e));
+      }
     }
-    let plans;
-    try {
-      plans = await listPlans(root);
-    } catch (e) {
-      this.cb.setStatus(String(e));
-      return;
+    const menu = this.plansMenu;
+    menu.innerHTML = '';
+    const item = (label: string, action: () => void, current = false, title = '') => {
+      const b = document.createElement('button');
+      b.className = current ? 'item current' : 'item';
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener('click', () => {
+        menu.hidden = true;
+        action();
+      });
+      menu.appendChild(b);
+    };
+    item('New plan', () => void this.newPlan());
+    const temp = settings.plan;
+    if (temp.stops.length > 0) {
+      const label = `Continue current plan (${temp.stops.length} stop${temp.stops.length === 1 ? '' : 's'})`;
+      item(label, () => void this.continueTemp(), !this.shown, temp.name ? `Temp plan "${temp.name}"` : 'Temp plan');
     }
-    this.plansMenu.innerHTML = '';
-    if (plans.length === 0) this.plansMenu.innerHTML = '<div class="muted item">No saved plans</div>';
-    for (const p of plans) {
-      const item = document.createElement('button');
-      item.className = 'item';
-      item.textContent = p.name;
-      item.title = p.path;
-      item.addEventListener('click', () => void this.load(p.name, p.path));
-      this.plansMenu.appendChild(item);
-    }
-    this.plansMenu.hidden = false;
+    menu.insertAdjacentHTML('beforeend', '<div class="divider"></div>');
+    if (!root) menu.insertAdjacentHTML('beforeend', '<div class="muted item">Choose the trips folder first</div>');
+    else if (plans.length === 0) menu.insertAdjacentHTML('beforeend', '<div class="muted item">No saved plans</div>');
+    for (const p of plans) item(p.name, () => void this.load(p.name, p.path), this.shown?.file === p.path, p.path);
+    menu.hidden = false;
   }
 
+  /** Starts an empty temp plan. Throwing away a temp plan with stops asks first, with a 5 s delay. */
+  private async newPlan(): Promise<void> {
+    if (!(await this.leaveShown())) return;
+    const temp = settings.plan;
+    if (temp.stops.length > 0) {
+      const n = temp.stops.length;
+      const ok = await ask(
+        `Start a new plan? The current plan${temp.name ? ` "${temp.name}"` : ''} (${n} stop${n === 1 ? '' : 's'}) is not saved and will be lost.`,
+        [
+          { label: 'Cancel', value: false },
+          { label: 'Discard and start new', value: true, primary: true, delay: 5 },
+        ],
+        false,
+      );
+      if (!ok) return;
+    }
+    settings.plan = { ...EMPTY_PLAN, stops: [] };
+    saveSettings();
+    this.shown = null;
+    this.planChanged();
+    this.open('', false);
+  }
+
+  private async continueTemp(): Promise<void> {
+    if (!(await this.leaveShown())) return;
+    this.shown = null;
+    this.planChanged();
+    this.open('', false);
+  }
+
+  /** Shows a saved plan. The temp plan is kept as it is. */
   private async load(name: string, path: string): Promise<void> {
-    this.plansMenu.hidden = true;
+    if (!(await this.leaveShown())) return;
     try {
       const stops = parsePlanFile(await readText(path));
-      settings.plan = { file: path, name, stops };
-      this.nameInput.value = name;
+      this.shown = { file: path, name, stops, saved: { name, stops: [...stops] }, dirty: false };
       this.planChanged();
-      this.cb.setStatus(`Loaded ${name} (${stops.length} stops)`);
+      this.open('', false);
+      this.cb.setStatus(`Loaded ${name} (${stops.length} stop${stops.length === 1 ? '' : 's'})`);
+    } catch (e) {
+      this.cb.setStatus(String(e));
+    }
+  }
+
+  // ── GPX ──
+
+  /** Adds a GPX file's waypoints to the end of the plan shown, skipping ones already in it. */
+  private async importGpx(): Promise<void> {
+    const path = await openDialog({ multiple: false, directory: false, filters: GPX_FILTER, title: 'Import a GPX file into the plan' });
+    if (typeof path !== 'string') return;
+    try {
+      const found = gpxToStops(await readText(path));
+      if (found.length === 0) {
+        this.cb.setStatus(`No waypoints in ${baseName(path)}`);
+        return;
+      }
+      const have = new Set(this.stops.map((s) => s.key));
+      const added = found.filter((s) => !have.has(s.key) && have.add(s.key));
+      if (!this.nameInput.value.trim()) {
+        this.nameInput.value = baseName(path).replace(/\.gpx$/i, '');
+        this.nameInput.dispatchEvent(new Event('input'));
+      }
+      this.setStops([...this.stops, ...added]);
+      this.cb.setStatus(`Imported ${added.length} stop${added.length === 1 ? '' : 's'} from ${baseName(path)}${added.length < found.length ? ` (${found.length - added.length} already in the plan)` : ''}`);
+    } catch (e) {
+      this.cb.setStatus(String(e));
+    }
+  }
+
+  private async exportGpx(): Promise<void> {
+    if (this.stops.length === 0) return;
+    const name = this.nameInput.value.trim();
+    const path = await saveDialog({ defaultPath: `${name || 'plan'}.gpx`, filters: GPX_FILTER, title: 'Export the plan as GPX' });
+    if (!path) return;
+    try {
+      await writeText(path, planToGpx(name, this.stops));
+      this.cb.setStatus(`Exported ${path}`);
     } catch (e) {
       this.cb.setStatus(String(e));
     }

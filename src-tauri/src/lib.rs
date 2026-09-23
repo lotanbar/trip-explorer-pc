@@ -192,6 +192,15 @@ fn read_text(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("{}: {}", path, e))
 }
 
+/// Writes a file the user picked in a save dialog (GPX export), through a temp file next to it.
+#[tauri::command]
+fn write_text(path: String, text: String) -> Result<(), String> {
+    let file = PathBuf::from(&path);
+    let tmp = PathBuf::from(format!("{}.tmp", path));
+    fs::write(&tmp, text).map_err(|e| format!("{}: {}", tmp.display(), e))?;
+    fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))
+}
+
 fn settings_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -629,6 +638,7 @@ pub fn run() {
             list_plans,
             save_plan,
             read_text,
+            write_text,
             load_settings,
             save_settings,
             cache_index,
