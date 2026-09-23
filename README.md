@@ -34,9 +34,13 @@ Deviations from the spec (agreed on 2026-09-22):
 
 - Only named OSM POIs are fetched, and places of worship / cemeteries additionally need a notable tag (`wikidata`, `wikipedia`, `heritage`, `website`, `image`, `wikimedia_commons`, `description` or `name:en`); every countryside chapel is tagged and they swamped the map.
 - Clicking an OSM POI or a trail opens the search / website in an embedded browser laid over the side panel
-- Place labels on the base map (cities, villages, islands ...) are drawn near-white and are clickable: they open the same search as a POI. Group colours are muted versions of the spec palette.
   (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
-  empty spot on the map brings the panel back.
+  empty spot on the map, or opening the search window (right-click a POI), brings the panel back.
+- Every page opened in the browser is a visit in an in-memory history (gone when the app closes); Alt+Left /
+  Alt+Right step through it, reopening the page and flying to its POI. Inside the browser the keys are reported
+  by navigating to `https://history.trip-explorer.invalid/<step>`, which the backend cancels and turns into the
+  `browser-history` event.
+- Place labels on the base map (cities, villages, islands ...) are drawn near-white and are clickable: they open the same search as a POI. Group colours are muted versions of the spec palette.
 - All trail categories use the same plain grey line; only the repeated icon differs (no dots, crossbars or ticks).
 - No zoom buttons, scale bar or attribution control on the map: pinch / ctrl+scroll zoom.
 

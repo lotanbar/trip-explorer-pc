@@ -21,3 +21,21 @@ describe('search actions', () => {
     expect(placeFromAddress({ country: 'Greece' })).toBe('');
   });
 });
+
+describe('browser history', () => {
+  it('records visits after the cursor, drops forward ones on a new page, and stops at both ends', async () => {
+    const { pushVisit, stepCursor } = await import('../src/browser');
+    const list: { url: string }[] = [];
+    let c = pushVisit(list, -1, { url: 'a' });
+    c = pushVisit(list, c, { url: 'b' });
+    c = pushVisit(list, c, { url: 'b' }); // the same page again is not a new visit
+    expect(list.map((v) => v.url)).toEqual(['a', 'b']);
+    expect(c).toBe(1);
+    c = stepCursor(list.length, c, -1);
+    expect(c).toBe(0);
+    expect(stepCursor(list.length, c, -1)).toBe(0);
+    c = pushVisit(list, c, { url: 'c' });
+    expect(list.map((v) => v.url)).toEqual(['a', 'c']);
+    expect(stepCursor(list.length, c, 1)).toBe(1);
+  });
+});

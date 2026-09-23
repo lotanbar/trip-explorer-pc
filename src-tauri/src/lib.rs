@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Mutex;
-use tauri::{LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl, WindowEvent};
+use tauri::{Emitter, EventTarget, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl, WindowEvent};
 
 #[derive(Serialize)]
 struct Recording {
@@ -293,9 +293,14 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
 
 const BROWSER_LABEL: &str = "browser";
 
+/// Where the embedded browser navigates to report Alt+Left / Alt+Right (a page cannot reach the app
+/// directly): the navigation is cancelled and the step (-1 / +1) is sent to the main webview as the
+/// `browser-history` event, which walks the app's own history of opened pages.
+const HISTORY_URL_PREFIX: &str = "https://history.trip-explorer.invalid/";
+
 /// Runs in every page the embedded browser loads. Everywhere: links that want a new window (which a
-/// child webview cannot open) navigate this webview instead, and Alt+Left / Alt+Right walk the
-/// history. On Google it keeps only the search box and the
+/// child webview cannot open) navigate this webview instead, and Alt+Left / Alt+Right are reported
+/// to the app (see `HISTORY_URL_PREFIX`). On Google it keeps only the search box and the
 /// results: hides the Google bar, the mobile header row (settings / share / logo), the result-type
 /// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, the
 /// "AI Overview" title row and the rule that ran under the tabs, keeps the AI overview fully open
@@ -318,8 +323,8 @@ const BROWSER_INIT_SCRIPT: &str = r#"
   };
   window.addEventListener('keydown', function (ev) {
     if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
-    if (ev.key === 'ArrowLeft') { ev.preventDefault(); history.back(); }
-    else if (ev.key === 'ArrowRight') { ev.preventDefault(); history.forward(); }
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); location.href = 'https://history.trip-explorer.invalid/-1'; }
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); location.href = 'https://history.trip-explorer.invalid/1'; }
   });
 })();
 (function () {
@@ -539,8 +544,18 @@ async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserStat
         webview.set_focus().map_err(|e| e.to_string())?;
     } else {
         #[allow(unused_mut)]
+        let app = window.app_handle().clone();
         let mut builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(url))
-            .initialization_script(BROWSER_INIT_SCRIPT);
+            .initialization_script(BROWSER_INIT_SCRIPT)
+            .on_navigation(move |url| {
+                if !url.as_str().starts_with(HISTORY_URL_PREFIX) {
+                    return true;
+                }
+                if let Ok(delta) = url.path().trim_start_matches('/').parse::<i32>() {
+                    let _ = app.emit_to(EventTarget::labeled("main"), "browser-history", delta);
+                }
+                false
+            });
         // On Windows every webview sharing the user-data folder must use the same browser
         // arguments as the main window, or WebView2 refuses to start the child.
         #[cfg(windows)]
@@ -579,16 +594,6 @@ async fn browser_close(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
-/// Walks the embedded browser's history (`delta` -1 = back, +1 = forward); used when the shortcut is
-/// pressed while the main window, not the browser, has focus.
-#[tauri::command]
-async fn browser_history(window: tauri::Window, delta: i32) -> Result<(), String> {
-    if let Some(webview) = browser_webview(&window) {
-        webview.eval(&format!("history.go({delta})")).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
 #[tauri::command]
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -620,7 +625,6 @@ pub fn run() {
             browser_open,
             browser_resize,
             browser_close,
-            browser_history,
             scan_trips,
             list_plans,
             save_plan,

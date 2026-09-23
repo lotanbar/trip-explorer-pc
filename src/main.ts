@@ -4,7 +4,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // a production build (the map then never loads), so Vite bundles the worker here and its URL is handed over.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { openMyPoi, openOsmPoi, openPlace, openTrail } from './actions';
-import { browserHistory, closeBrowser, isBrowserOpen } from './browser';
+import { closeBrowser, stepHistory } from './browser';
+import { listen } from '@tauri-apps/api/event';
 import { closePanel, initPanel } from './panel';
 import { installMapGestures } from './gestures';
 import type { FeatureCollection, Point } from 'geojson';
@@ -328,17 +329,26 @@ async function main(): Promise<void> {
       stop = r ? resultStop(r) : { key: String(props.key), lat, lon, name };
     }
     if (!stop) return;
+    // Right-click works from any screen: the search window replaces whatever the panel showed.
     search.toggle(stop);
     tooltip.hide();
   });
   mapEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  const walkHistory = (delta: number) => {
+    stepHistory(delta)
+      .then((visit) => { if (visit && visit.lat !== undefined && visit.lon !== undefined) flyTo(visit.lat, visit.lon); })
+      .catch((err) => setStatus('open', `Could not open: ${err}`));
+  };
+  void listen<number>('browser-history', (ev) => walkHistory(ev.payload));
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeBrowser().catch((err) => setStatus('open', `Could not close: ${err}`));
-    // Alt+Left / Alt+Right walk the embedded browser's history even while the map has focus.
-    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && isBrowserOpen()) {
+    // Alt+Left / Alt+Right step through the pages opened in the embedded browser (the browser itself
+    // reports the keys through the backend's `browser-history` event when it has the keyboard).
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault();
-      browserHistory(e.key === 'ArrowLeft' ? -1 : 1).catch(() => undefined);
+      walkHistory(e.key === 'ArrowLeft' ? -1 : 1);
     }
     // WebView2 zoom control is on so touchpad pinch reaches the map; keep the page itself unscaled.
     if (e.ctrlKey && ['+', '-', '=', '0'].includes(e.key)) e.preventDefault();
