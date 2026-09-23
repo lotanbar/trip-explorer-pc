@@ -1,7 +1,8 @@
 /**
- * The search/plan window: shown in the side panel in place of its controls when the search bar is
- * pressed. Top to bottom: the plan's stops (numbered, draggable), the search results, the search
- * bar. Right-click adds a result to the plan or removes a stop; a click flies to it.
+ * The search/plan window: shown in the side panel in place of its controls when the search bar
+ * (always at the bottom of the panel) is used or a POI is right-clicked. Top to bottom: the plan's
+ * stops (numbered, draggable), the search results, the search bar. Right-click adds a result to the
+ * plan or removes a stop; a click flies to it.
  */
 
 import { listPlans, readText, savePlan } from './backend';
@@ -32,7 +33,6 @@ export function resultStop(r: SearchResult): PlanStop {
 }
 
 export class SearchWindow {
-  private readonly bar: HTMLElement;
   private readonly win: HTMLElement;
   private readonly planList: HTMLElement;
   private readonly resultList: HTMLElement;
@@ -44,10 +44,8 @@ export class SearchWindow {
 
   constructor(private readonly panel: HTMLElement, private readonly cb: SearchWindowCallbacks) {
     // Both sit above the status line, which stays visible (with the credit) under the embedded browser too.
+    // The bar is one element, always shown: last in the panel when the window is closed, under the window when open.
     panel.querySelector('#status')!.insertAdjacentHTML('beforebegin', `
-      <div id="search-bar" class="search-bar">
-        <input id="search-open" type="search" placeholder="Search places…" autocomplete="off" spellcheck="false">
-      </div>
       <div id="search-window" class="search-window" hidden>
         <div class="section-head">
           <h2>Plan</h2>
@@ -64,12 +62,11 @@ export class SearchWindow {
         <ol id="plan-list" class="plan-list"></ol>
         <div class="results-head"><h2>Results</h2><span id="results-note" class="muted"></span></div>
         <div id="result-list" class="result-list"></div>
-        <div class="search-bar">
-          <input id="search-input" type="search" placeholder="Search places…" autocomplete="off" spellcheck="false">
-        </div>
+      </div>
+      <div id="search-bar" class="search-bar">
+        <input id="search-input" type="search" placeholder="Search places…" autocomplete="off" spellcheck="false">
       </div>
     `);
-    this.bar = panel.querySelector('#search-bar')!;
     this.win = panel.querySelector('#search-window')!;
     this.planList = panel.querySelector('#plan-list')!;
     this.resultList = panel.querySelector('#result-list')!;
@@ -77,11 +74,12 @@ export class SearchWindow {
     this.nameInput = panel.querySelector('#plan-name')!;
     this.plansMenu = panel.querySelector('#plans-menu')!;
 
-    const opener = panel.querySelector<HTMLInputElement>('#search-open')!;
-    opener.addEventListener('focus', () => this.open(opener.value));
-    opener.addEventListener('input', () => this.open(opener.value));
+    this.input.addEventListener('focus', () => this.open(this.input.value));
+    this.input.addEventListener('input', () => {
+      this.open(this.input.value);
+      this.live.update(this.input.value, cb.near);
+    });
     panel.querySelector('#search-close')!.addEventListener('click', () => this.close());
-    this.input.addEventListener('input', () => this.live.update(this.input.value, cb.near));
     this.nameInput.addEventListener('input', () => {
       settings.plan.name = this.nameInput.value;
       saveSettings();
@@ -111,16 +109,18 @@ export class SearchWindow {
     return !this.win.hidden;
   }
 
-  open(query: string): void {
+  /** Shows the window. `focus` is false when it opens from a right-click, so the map keeps the keyboard. */
+  open(query: string, focus = true): void {
     if (!this.win.hidden) return;
-    this.bar.hidden = true;
     this.win.hidden = false;
     this.panel.classList.add('search-open');
     settings.searchOpen = true;
     saveSettings();
-    this.input.value = query;
-    this.input.focus();
-    if (query) this.live.update(query, this.cb.near);
+    if (this.input.value !== query) {
+      this.input.value = query;
+      if (query) this.live.update(query, this.cb.near);
+    }
+    if (focus) this.input.focus();
     this.cb.onOpenChanged(true);
     this.cb.onResults(this.results);
   }
@@ -129,13 +129,13 @@ export class SearchWindow {
     if (this.win.hidden) return;
     this.live.cancel();
     this.win.hidden = true;
-    this.bar.hidden = false;
-    this.panel.querySelector<HTMLInputElement>('#search-open')!.value = '';
+    this.input.value = '';
+    this.input.blur();
+    this.setResults([], null);
     this.panel.classList.remove('search-open');
     settings.searchOpen = false;
     saveSettings();
     this.cb.onOpenChanged(false);
-    this.cb.onResults([]);
   }
 
   // ── Results ──
@@ -181,6 +181,7 @@ export class SearchWindow {
   /** Adds the stop to the end of the plan, or removes it when it is already there. */
   toggle(stop: PlanStop): void {
     settings.plan.stops = toggleStop(settings.plan.stops, stop);
+    this.open('', false);
     this.planChanged();
   }
 

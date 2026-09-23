@@ -297,7 +297,8 @@ async function main(): Promise<void> {
     }
   });
 
-  // Right-click on a POI or a search result: add it to the end of the plan, or remove it again.
+  // Right-click on a POI or a search result, whether or not the window is open: it opens the window and
+  // adds the POI to the end of the plan, or removes it again.
   map.on('contextmenu', (e: MapMouseEvent) => {
     e.preventDefault();
     const features = map.queryRenderedFeatures(
