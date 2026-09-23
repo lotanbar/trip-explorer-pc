@@ -58,6 +58,7 @@ export async function loadMapStyle(): Promise<StyleSpecification> {
   for (const id of placeLabelLayerIds(style)) {
     const layer = style.layers.find((l) => l.id === id) as { paint?: Record<string, unknown> };
     layer.paint = { ...layer.paint, 'text-color': PLACE_LABEL_COLOR, 'text-halo-color': PLACE_LABEL_HALO, 'text-halo-width': 1.4 };
+    if (id !== 'place_continent') layer.paint['text-opacity'] = 1;
   }
 
   const firstSymbol = style.layers.findIndex((l) => l.type === 'symbol');

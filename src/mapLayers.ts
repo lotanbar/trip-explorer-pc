@@ -43,6 +43,8 @@ export function addOverlayLayers(map: MapLibreMap): void {
   for (const id of [SRC_TRAILS, SRC_RECORDINGS, SRC_OSM_POIS, SRC_MY_POIS]) {
     map.addSource(id, { type: 'geojson', data: EMPTY });
   }
+  // Route lines sit under the base map's labels (place names stay readable); icons and markers on top.
+  const underLabels = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
 
   // ── Trails: plain light grey lines, told apart only by the icon repeated along them ──
   map.addLayer({
@@ -52,7 +54,7 @@ export function addOverlayLayers(map: MapLibreMap): void {
     minzoom: TRAILS_MIN_ZOOM,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': TRAIL_COLOR, 'line-width': 2, 'line-opacity': 0.9 },
-  });
+  }, underLabels);
   map.addLayer({
     id: LAYERS.trailsIcons,
     type: 'symbol',
@@ -77,7 +79,7 @@ export function addOverlayLayers(map: MapLibreMap): void {
     filter: ['!', ['get', 'incomplete']],
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': ['get', 'color'], 'line-width': 4 },
-  });
+  }, underLabels);
   map.addLayer({
     id: LAYERS.recordingsIncomplete,
     type: 'line',
@@ -85,7 +87,7 @@ export function addOverlayLayers(map: MapLibreMap): void {
     filter: ['get', 'incomplete'],
     layout: { 'line-cap': 'butt', 'line-join': 'round' },
     paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-dasharray': [2, 2] },
-  });
+  }, underLabels);
 
   // ── Markers ──
   map.addLayer({
