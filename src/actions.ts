@@ -6,13 +6,15 @@
 import { openPath } from '@tauri-apps/plugin-opener';
 import { openInBrowser } from './browser';
 
-/** Google, in English; the query shape "<name> <place> info english" gives the best results. */
+/** Google, in English; "<name> <place> info english short answer" gives the best (and briefest) AI overview. */
 export function searchUrl(query: string): string {
   return `https://www.google.com/search?hl=en&q=${encodeURIComponent(query.trim())}`;
 }
 
+export const QUERY_SUFFIX = 'info english short answer';
+
 export function poiSearchQuery(name: string, place: string): string {
-  return `${name} ${place} info english`.replace(/\s+/g, ' ').trim();
+  return `${name} ${place} ${QUERY_SUFFIX}`.replace(/\s+/g, ' ').trim();
 }
 
 const placeCache = new Map<string, string>();
@@ -61,12 +63,12 @@ export async function openOsmPoi(name: string | null, lat: number, lon: number):
 export async function openPlace(name: string | null, lat: number, lon: number): Promise<void> {
   if (!name) return;
   const place = await lookupPlace(lat, lon);
-  const query = place && place.toLowerCase() !== name.toLowerCase() ? poiSearchQuery(name, place) : `${name} info english`;
+  const query = place && place.toLowerCase() !== name.toLowerCase() ? poiSearchQuery(name, place) : `${name} ${QUERY_SUFFIX}`;
   await openInBrowser(searchUrl(query));
 }
 
 /** The route's website if it has one, otherwise a search for the name. Unnamed lines do nothing. */
 export async function openTrail(name: string | null, website: string | null): Promise<void> {
   if (website) await openInBrowser(website);
-  else if (name) await openInBrowser(searchUrl(`${name} info english`));
+  else if (name) await openInBrowser(searchUrl(`${name} ${QUERY_SUFFIX}`));
 }

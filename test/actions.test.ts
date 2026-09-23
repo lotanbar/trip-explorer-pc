@@ -7,8 +7,8 @@ import { placeFromAddress, poiSearchQuery, searchUrl } from '../src/actions';
 
 describe('search actions', () => {
   it('builds an English Google search in the agreed shape', () => {
-    expect(poiSearchQuery('Κούρος Φαράγγι', 'Naxos')).toBe('Κούρος Φαράγγι Naxos info english');
-    expect(poiSearchQuery('Portara', '')).toBe('Portara info english');
+    expect(poiSearchQuery('Κούρος Φαράγγι', 'Naxos')).toBe('Κούρος Φαράγγι Naxos info english short answer');
+    expect(poiSearchQuery('Portara', '')).toBe('Portara info english short answer');
     expect(searchUrl('Portara Naxos info english')).toBe('https://www.google.com/search?hl=en&q=Portara%20Naxos%20info%20english');
   });
 
