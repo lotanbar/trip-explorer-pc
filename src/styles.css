@@ -31,7 +31,7 @@ body {
 }
 
 #app {
-  --panel: 340px;
+  --panel: 357px;
   display: grid;
   grid-template-columns: var(--panel) 6px minmax(0, 1fr);
   height: 100vh;

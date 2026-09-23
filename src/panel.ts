@@ -10,7 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { browserBottomInset, isBrowserOpen } from './browser';
 import { saveSettings, settings } from './settings';
 
-export const PANEL_MIN_WIDTH = 340;
+export const PANEL_MIN_WIDTH = 357;
 /** The drag handle's width; the panel stops short of the window edge by this much so it stays grabbable. */
 const HANDLE_WIDTH = 6;
 
