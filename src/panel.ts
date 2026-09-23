@@ -1,7 +1,9 @@
 /**
  * The side panel's geometry: a drag handle on its right edge resizes it from the minimum width up
  * to the whole window; the × closes it and the menu button (bottom left of the map) opens it again.
- * The embedded browser, when shown, follows the panel's width.
+ * When the window shrinks, the panel gives way first (down to its minimum width, the map keeping
+ * its width); after that the map shrinks, all the way to nothing. The embedded browser, when
+ * shown, follows the panel's width.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -14,8 +16,21 @@ const HANDLE_WIDTH = 6;
 
 const app = () => document.getElementById('app')!;
 
+/**
+ * The map's width the user last settled on (by dragging the handle); kept when the window shrinks.
+ * Null until the window has a real size: the web view starts before the window is laid out.
+ */
+let mapWidth: number | null = null;
+
+const maxPanel = () => Math.max(0, window.innerWidth - HANDLE_WIDTH);
+
 export function panelWidth(): number {
-  return Math.max(PANEL_MIN_WIDTH, Math.min(window.innerWidth - HANDLE_WIDTH, settings.panelWidth ?? PANEL_MIN_WIDTH));
+  if (mapWidth === null) {
+    if (maxPanel() < PANEL_MIN_WIDTH) return maxPanel();
+    mapWidth = maxPanel() - Math.min(Math.max(PANEL_MIN_WIDTH, settings.panelWidth ?? PANEL_MIN_WIDTH), maxPanel());
+  }
+  const wanted = Math.min(settings.panelWidth ?? PANEL_MIN_WIDTH, maxPanel() - mapWidth);
+  return Math.min(Math.max(PANEL_MIN_WIDTH, wanted), maxPanel());
 }
 
 function apply(): void {
@@ -49,7 +64,8 @@ export function initPanel(): void {
     handle.setPointerCapture(e.pointerId);
     app().classList.add('resizing');
     const move = (ev: PointerEvent) => {
-      settings.panelWidth = Math.round(Math.max(PANEL_MIN_WIDTH, Math.min(window.innerWidth - HANDLE_WIDTH, ev.clientX)));
+      settings.panelWidth = Math.round(Math.min(Math.max(PANEL_MIN_WIDTH, ev.clientX), maxPanel()));
+      mapWidth = maxPanel() - settings.panelWidth;
       apply();
     };
     const up = () => {
