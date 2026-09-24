@@ -21,6 +21,8 @@ export interface SidebarCallbacks {
   onCheckedChanged: () => void;
   onGroupsChanged: () => void;
   onTrailsChanged: () => void;
+  /** A plan stop's "visited" box was ticked or cleared (`index`: its place in the plan file). */
+  onVisitedChanged: (planPath: string, index: number, visited: boolean) => void;
 }
 
 export class Sidebar {
@@ -163,7 +165,20 @@ export class Sidebar {
       children.className = 'children';
       children.hidden = !this.expanded.has(plan.path);
       plan.stops.forEach((stop, i) => {
-        children.appendChild(this.node('stop', stop.name, [leaves[i]], checked, `<span class="stop-dot" style="background:${color}"></span>`, '', stop.name, this.planBoxes));
+        const stopNode = this.node('stop', stop.name, [leaves[i]], checked, `<span class="stop-dot" style="background:${color}"></span>`, '', stop.name, this.planBoxes);
+        // The second box, at the row's end: visited (the name gets struck through). Saved in the plan file.
+        const visited = document.createElement('input');
+        visited.type = 'checkbox';
+        visited.className = 'visited-box';
+        visited.title = 'Visited';
+        visited.checked = !!stop.visited;
+        stopNode.classList.toggle('visited', visited.checked);
+        visited.addEventListener('change', () => {
+          stopNode.classList.toggle('visited', visited.checked);
+          this.cb.onVisitedChanged(plan.path, i, visited.checked);
+        });
+        stopNode.querySelector('.row')!.appendChild(visited);
+        children.appendChild(stopNode);
       });
       // A span, not a button: a button inside the row's label would take the label's clicks from the checkbox.
       const caret = document.createElement('span');

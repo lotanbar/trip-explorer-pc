@@ -173,6 +173,17 @@ body {
   font-weight: 600;
 }
 
+/* A plan stop ticked as visited: a thin line through the name, still readable. */
+.node-stop.visited > .row .name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  color: var(--muted);
+}
+
+.visited-box {
+  margin-left: auto;
+}
+
 .section-head {
   display: flex;
   align-items: center;

@@ -9,7 +9,7 @@ import { browserPage, closeBrowser, onBrowserChange, openInBrowser } from './bro
 import { closePanel, initPanel } from './panel';
 import { installMapGestures } from './gestures';
 import type { FeatureCollection, Point } from 'geojson';
-import { scanTrips, cacheEvict, listPlans, readText, CACHE_TTL_MS, type TripInfo } from './backend';
+import { scanTrips, cacheEvict, listPlans, readText, writeText, CACHE_TTL_MS, type TripInfo } from './backend';
 import { groupForFile } from './groups';
 import { addMarkerImages, addOverlayLayers, LAYERS, lastData, setData, SRC_MY_POIS, SRC_OSM_POIS, SRC_PLANS, SRC_RECORDINGS, SRC_SEARCH, SRC_TRAILS } from './mapLayers';
 import { loadMapStyle, placeLabelLayerIds } from './mapStyle';
@@ -21,7 +21,7 @@ import { loadSettings, saveSettings, settings } from './settings';
 import { Sidebar } from './sidebar';
 import { resultStop, SearchWindow } from './searchWindow';
 import { resultKey, type SearchResult } from './photon';
-import { parsePlanFile, planStopKey, type PlanStop, type SavedPlan } from './plan';
+import { parsePlanFile, planStopKey, setVisitedInText, type PlanStop, type SavedPlan } from './plan';
 import { Tooltip } from './tooltip';
 import { GROUPS, NO_GROUP } from './groups';
 import { TRAIL_CATEGORIES, TRAILS_MIN_AREA_KM, TRAILS_MIN_ZOOM, trailStore, trailsGeoJson } from './trails';
@@ -45,6 +45,7 @@ async function main(): Promise<void> {
     onCheckedChanged: () => renderChecked(),
     onGroupsChanged: () => renderOsmPois(),
     onTrailsChanged: () => renderTrails(),
+    onVisitedChanged: (path, index, visited) => void setVisited(path, index, visited),
   });
   const setStatus = (key: string, message: string | null) => {
     if (message) statusMessages.set(key, message);
@@ -182,6 +183,22 @@ async function main(): Promise<void> {
     }
     sidebar.setPlans(plans);
     renderPlans();
+  }
+
+  /** Ticks a saved plan's stop as visited (or clears it): only that line of the file is rewritten. */
+  async function setVisited(path: string, index: number, visited: boolean): Promise<void> {
+    try {
+      await writeText(path, setVisitedInText(await readText(path), index, visited));
+      const stop = plans.find((p) => p.path === path)?.stops[index];
+      if (stop) {
+        stop.visited = visited;
+        search.setVisited(path, stop, visited);
+      }
+      setStatus('plans', null);
+    } catch (e) {
+      setStatus('plans', `Could not save visited: ${e}`);
+      void loadPlans();
+    }
   }
 
   /** The ticked stops of the saved plans: dots in the plan's colour (a plan is a group of places, not a route: no numbers). */

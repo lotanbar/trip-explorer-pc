@@ -266,6 +266,18 @@ export class SearchWindow {
     this.renderTitle();
   }
 
+  /**
+   * A stop of a saved plan was ticked visited in the Plans section (its file is already written). If
+   * that plan is shown here, its stop follows (found by place and name: the order here may differ
+   * from the file's), so a Save keeps the tick; it is not an unsaved edit.
+   */
+  setVisited(file: string, stop: PlanStop, visited: boolean): void {
+    const s = this.shown;
+    if (!s || s.file !== file) return;
+    const same = (x: PlanStop) => x.lat.toFixed(5) === stop.lat.toFixed(5) && x.lon.toFixed(5) === stop.lon.toFixed(5) && x.name === stop.name;
+    for (const x of [...s.stops, ...s.saved.stops]) if (same(x)) x.visited = visited;
+  }
+
   inPlan(key: string): boolean {
     return this.stops.some((s) => s.key === key);
   }
