@@ -33,10 +33,21 @@ export function isBrowserOpen(): boolean {
   return open;
 }
 
-/** How much of the window bottom the browser leaves free: the search bar (and the status line under it). */
+/**
+ * How much of the window bottom the browser leaves free: the search bar (and the status line under
+ * it), and the Plans menu while it is open (it opens upwards, and the browser would cover it).
+ */
 export function browserBottomInset(): number {
-  const bar = document.getElementById('search-bar');
-  return bar ? Math.max(0, window.innerHeight - bar.getBoundingClientRect().top) : 0;
+  const tops = ['search-bar', 'plans-menu']
+    .map((id) => document.getElementById(id))
+    .filter((el): el is HTMLElement => !!el && !el.hidden)
+    .map((el) => el.getBoundingClientRect().top);
+  return tops.length ? Math.max(0, window.innerHeight - Math.min(...tops)) : 0;
+}
+
+/** Fits the open browser to the panel again (after the free space at the bottom changed). */
+export function refitBrowser(): void {
+  if (open) invoke('browser_resize', { width: panelWidth(), bottomInset: browserBottomInset() }).catch(() => undefined);
 }
 
 /**

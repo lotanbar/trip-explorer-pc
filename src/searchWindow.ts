@@ -11,6 +11,7 @@
 
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { listPlans, readText, savePlan, writeText } from './backend';
+import { refitBrowser } from './browser';
 import { ask } from './dialog';
 import { gpxToStops, planToGpx } from './gpx';
 import { checkName } from './names';
@@ -139,6 +140,8 @@ export class SearchWindow {
       void this.togglePlansMenu();
     });
     document.addEventListener('click', () => { this.plansMenu.hidden = true; });
+    // The embedded browser sits above the page: it steps back while the menu is open, so the menu shows whole.
+    new MutationObserver(() => refitBrowser()).observe(this.plansMenu, { attributes: true, attributeFilter: ['hidden'] });
 
     this.live = new LiveSearch((query, results) => {
       const mine = matchMyPois(query, cb.myPois());
