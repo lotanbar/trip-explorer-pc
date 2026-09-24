@@ -25,8 +25,6 @@ export interface Settings {
   panelWidth: number | null;
   /** The temp plan: written to plans/ only on Save. Saved plans are shown from their files. */
   plan: PlanDraft;
-  /** The search/plan window shown instead of the panel's controls. */
-  searchOpen: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -40,7 +38,6 @@ const DEFAULTS: Settings = {
   panelOpen: true,
   panelWidth: null,
   plan: EMPTY_PLAN,
-  searchOpen: false,
 };
 
 export let settings: Settings = { ...DEFAULTS };

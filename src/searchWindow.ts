@@ -156,7 +156,6 @@ export class SearchWindow {
     });
 
     this.renderPlan();
-    if (settings.searchOpen) this.open('');
   }
 
   get isOpen(): boolean {
@@ -169,8 +168,6 @@ export class SearchWindow {
     if (!this.win.hidden) return;
     this.win.hidden = false;
     this.panel.classList.add('search-open');
-    settings.searchOpen = true;
-    saveSettings();
     if (this.input.value !== query) {
       this.input.value = query;
       if (query) this.live.update(query, this.cb.near);
@@ -188,8 +185,6 @@ export class SearchWindow {
     this.input.blur();
     this.setResults([], null);
     this.panel.classList.remove('search-open');
-    settings.searchOpen = false;
-    saveSettings();
     this.cb.onScreenChanged();
   }
 
