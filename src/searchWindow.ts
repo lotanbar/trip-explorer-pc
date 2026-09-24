@@ -286,6 +286,9 @@ export class SearchWindow {
     const title = this.panel.querySelector('#plan-title')!;
     title.textContent = this.shown ? (this.shown.dirty ? 'Saved plan •' : 'Saved plan') : 'Temp plan';
     (title as HTMLElement).title = this.shown ? (this.shown.dirty ? `${this.shown.file} (unsaved changes)` : this.shown.file) : 'Not saved yet: kept until Save or New plan';
+    // Save stands out while there is something unsaved: an edited saved plan, or a temp plan with stops.
+    const unsaved = this.shown ? this.shown.dirty : settings.plan.stops.length > 0;
+    this.panel.querySelector('#plan-save')!.classList.toggle('primary', unsaved);
   }
 
   /** The list grows with the stops (up to about half the window) and is not shown at all while the plan is empty. */
