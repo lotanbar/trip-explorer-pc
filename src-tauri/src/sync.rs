@@ -828,12 +828,12 @@ impl Engine {
         Ok(())
     }
 
+    /// Drops a path and everything under it from the base. (Drive's tree is left alone: a folder renamed
+    /// on Drive has the same id at its new path.)
     fn forget_tree(&mut self, path: &str) {
         let doomed: Vec<String> = self.state.base.keys().filter(|k| *k == path || under(k, path)).cloned().collect();
         for k in doomed {
-            if let Some(b) = self.state.base.remove(&k) {
-                self.state.nodes.remove(&b.id);
-            }
+            self.state.base.remove(&k);
         }
     }
 
@@ -1191,15 +1191,25 @@ mod live {
         let gpx_old = "Greece 2026/recordings/2026-09-27 16-02-40 - recording.gpx";
         let rec_dir = after["Greece 2026/recordings"].id.clone();
         d.move_to(&after[gpx_old].id, "2026-09-27 16-02-40 - 17-00-00.gpx", &rec_dir, &rec_dir).unwrap();
+        // 5b. A POI folder renamed on Drive is renamed here.
+        d.move_to(&after["Greece 2026/Kastro cave"].id, "Kastro cave (closed)", &after["Greece 2026"].id, &after["Greece 2026"].id).unwrap();
         // 6. A file trashed on Drive goes here too.
         d.trash(&after["Greece 2026/Kastro cave/datetime.txt"].id).unwrap();
+        let kastro = "Greece 2026/Kastro cave (closed)";
         std::thread::sleep(Duration::from_secs(32));
         settle(&h, "Drive changes", Duration::from_secs(60));
         assert_same(&mut d, &folder, &root, "Drive changes");
         assert_eq!(fs::read_to_string(root.join(plan_path)).unwrap(), "Edited on the phone\n");
         assert!(root.join("Greece 2026/recordings/2026-09-27 16-02-40 - 17-00-00.gpx").exists());
         assert!(!root.join(gpx_old).exists());
-        assert!(!root.join("Greece 2026/Kastro cave/datetime.txt").exists());
+        assert!(!root.join("Greece 2026/Kastro cave").exists());
+        assert!(root.join(kastro).join("description.txt").exists());
+        assert!(!root.join(kastro).join("datetime.txt").exists());
+        // 6b. A later cycle keeps the renamed folder (its Drive node is still known).
+        std::thread::sleep(Duration::from_secs(32));
+        settle(&h, "after folder rename", Duration::from_secs(60));
+        assert_same(&mut d, &folder, &root, "after folder rename");
+        assert!(root.join(kastro).join("description.txt").exists());
 
         // 7. A local removal goes to Drive's trash.
         fs::remove_file(root.join("plans/Naxos Imported.txt")).unwrap();
