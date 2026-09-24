@@ -1233,3 +1233,52 @@ mod live {
         println!("OK — all steps passed; Drive run folder trashed");
     }
 }
+
+/// The PC engine against a given Drive folder, as the PC app would run it, for testing with the phone:
+/// `TE_FOLDER=<drive folder id> cargo test live_join -- --ignored --nocapture`. Keeps its local copy
+/// (a copy of trips-sample the first time) and state in the temp folder between runs.
+#[cfg(test)]
+mod live_join {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn live_join() {
+        let folder = std::env::var("TE_FOLDER").expect("TE_FOLDER");
+        let appdata = PathBuf::from(std::env::var("APPDATA").unwrap()).join("com.lotanbar.tripexplorer");
+        let tmp = std::env::temp_dir().join("te-join");
+        let (root, data) = (tmp.join("trips"), tmp.join("data"));
+        if !root.exists() {
+            fn copy_dir(from: &Path, to: &Path) {
+                fs::create_dir_all(to).unwrap();
+                for e in fs::read_dir(from).unwrap().flatten() {
+                    if e.path().is_dir() { copy_dir(&e.path(), &to.join(e.file_name())) } else { fs::copy(e.path(), to.join(e.file_name())).unwrap(); }
+                }
+            }
+            copy_dir(Path::new("C:/Users/Lotan/Desktop/trips-sample"), &root);
+            fs::create_dir_all(&data).unwrap();
+            fs::copy(appdata.join("drive_auth.json"), data.join("drive_auth.json")).unwrap();
+        }
+        let fresh = !data.join("drive_sync.json").exists();
+        let h = Engine::start(data.clone(), |_, _| {});
+        h.shared.lock().unwrap().root = Some(root.clone());
+        if fresh {
+            h.shared.lock().unwrap().new_folder = Some((folder, "phone run".into()));
+        }
+        h.poke();
+        let t0 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
+        loop {
+            std::thread::sleep(Duration::from_millis(300));
+            let s = h.shared.lock().unwrap().status.clone();
+            if let Some(e) = s.error { panic!("{}", e) }
+            if !s.busy && s.last_sync.map(|t| t > t0).unwrap_or(false) {
+                println!("PC engine synced ({} actions)", s.total);
+                break;
+            }
+        }
+        h.shared.lock().unwrap().stop = true;
+        for (p, e) in scan_local(&root) {
+            if !e.dir { println!("  {}", p) }
+        }
+    }
+}
