@@ -72,10 +72,14 @@ export interface SyncStatus {
   total: number;
   bytes_done: number;
   bytes_total: number;
-  /** Changes made here that are not on Drive yet. */
-  pending_up: number;
   error: string | null;
   last_sync: number | null;
+  /** What is being sent or fetched now ("↑ …" / "↓ …"). */
+  current: string | null;
+  /** Seconds left (from the transfer rate so far). */
+  eta_s: number | null;
+  /** What the last sync did, one line per item. */
+  last_changes: string[];
 }
 
 export interface DriveFolder {
@@ -92,5 +96,5 @@ export const driveSignOut = () => invoke<void>('drive_sign_out');
 export const driveListFolders = (parent: string) => invoke<DriveFolder[]>('drive_list_folders', { parent });
 export const driveCreateFolder = (parent: string, name: string) => invoke<DriveFolder>('drive_create_folder', { parent, name });
 export const drivePickFolder = (id: string, name: string) => invoke<void>('drive_pick_folder', { id, name });
-/** Quits even though changes are still going up to Drive. */
-export const appClose = () => invoke<void>('app_close');
+/** The Sync button: one pass, both ways (the newer change wins). */
+export const driveSync = () => invoke<void>('drive_sync');

@@ -186,25 +186,6 @@ struct FileList {
     files: Vec<RemoteFile>,
 }
 
-#[derive(Deserialize)]
-pub struct Change {
-    #[serde(default)]
-    pub removed: bool,
-    #[serde(rename = "fileId")]
-    pub file_id: String,
-    pub file: Option<RemoteFile>,
-}
-
-#[derive(Deserialize)]
-struct ChangeList {
-    #[serde(rename = "nextPageToken")]
-    next_page_token: Option<String>,
-    #[serde(rename = "newStartPageToken")]
-    new_start_page_token: Option<String>,
-    #[serde(default)]
-    changes: Vec<Change>,
-}
-
 /// An error from Drive; `auth` is set when the refresh token no longer works (sign in again).
 #[derive(Debug)]
 pub struct DriveError {
@@ -323,65 +304,18 @@ impl Drive {
 
     /// Every non-trashed child of a folder (`folders_only`: just the subfolders).
     pub fn children(&mut self, parent: &str, folders_only: bool) -> DResult<Vec<RemoteFile>> {
-        let mut q = format!("'{}' in parents and trashed = false", q_escape(parent));
-        if folders_only {
-            q.push_str(&format!(" and mimeType = '{}'", FOLDER_MIME));
-        }
-        let fields = format!("nextPageToken,files({})", FILE_FIELDS);
-        let mut out = Vec::new();
-        let mut page: Option<String> = None;
-        loop {
-            let (q2, f2, p2) = (q.clone(), fields.clone(), page.clone());
-            let list: FileList = self.json(move |h, t| {
-                let mut r = h.get(format!("{}/files", API)).bearer_auth(t).query(&[("q", q2.as_str()), ("fields", f2.as_str()), ("pageSize", "1000"), ("orderBy", "name")]);
-                if let Some(p) = &p2 {
-                    r = r.query(&[("pageToken", p.as_str())]);
-                }
-                r
-            })?;
-            out.extend(list.files);
-            match list.next_page_token {
-                Some(p) => page = Some(p),
-                None => return Ok(out),
-            }
-        }
+        let token = self.token()?;
+        children_with(&self.http, &token, parent, folders_only)
     }
 
-    pub fn start_page_token(&mut self) -> DResult<String> {
-        #[derive(Deserialize)]
-        struct Start {
-            #[serde(rename = "startPageToken")]
-            token: String,
-        }
-        let s: Start = self.json(|h, t| h.get(format!("{}/changes/startPageToken", API)).bearer_auth(t))?;
-        Ok(s.token)
+    /// A current access token and the HTTP client, for listing folders from several threads at once.
+    pub fn lister(&mut self) -> DResult<(reqwest::blocking::Client, String)> {
+        Ok((self.http.clone(), self.token()?))
     }
 
-    /// Every change since `token`, and the token to continue from next time.
-    pub fn changes(&mut self, token: &str) -> DResult<(Vec<Change>, String)> {
-        let fields = format!("nextPageToken,newStartPageToken,changes(removed,fileId,file({}))", FILE_FIELDS);
-        let mut out = Vec::new();
-        let mut page = token.to_string();
-        loop {
-            let (f2, p2) = (fields.clone(), page.clone());
-            let list: ChangeList = self.json(move |h, t| {
-                h.get(format!("{}/changes", API)).bearer_auth(t).query(&[
-                    ("pageToken", p2.as_str()),
-                    ("fields", f2.as_str()),
-                    ("pageSize", "1000"),
-                    ("includeRemoved", "true"),
-                    ("spaces", "drive"),
-                ])
-            })?;
-            out.extend(list.changes);
-            if let Some(next) = list.new_start_page_token {
-                return Ok((out, next));
-            }
-            match list.next_page_token {
-                Some(p) => page = p,
-                None => return Err(err("Drive changes list ended without a token")),
-            }
-        }
+    pub fn get(&mut self, id: &str) -> DResult<RemoteFile> {
+        let id = id.to_string();
+        self.json(move |h, t| h.get(format!("{}/files/{}", API, id)).bearer_auth(t).query(&[("fields", FILE_FIELDS)]))
     }
 
     pub fn create_folder(&mut self, parent: &str, name: &str) -> DResult<RemoteFile> {
@@ -475,6 +409,35 @@ impl Drive {
         let url = format!("{}/files/{}", API, id);
         self.send(move |h, t| h.patch(&url).bearer_auth(t).query(&[("fields", "id")]).json(&serde_json::json!({ "trashed": true })))?;
         Ok(())
+    }
+}
+
+/// Every non-trashed child of a folder, with a given token (thread-safe; see `Drive::lister`).
+pub fn children_with(http: &reqwest::blocking::Client, token: &str, parent: &str, folders_only: bool) -> DResult<Vec<RemoteFile>> {
+    let mut q = format!("'{}' in parents and trashed = false", q_escape(parent));
+    if folders_only {
+        q.push_str(&format!(" and mimeType = '{}'", FOLDER_MIME));
+    }
+    let fields = format!("nextPageToken,files({})", FILE_FIELDS);
+    let mut out = Vec::new();
+    let mut page: Option<String> = None;
+    loop {
+        let mut r = http.get(format!("{}/files", API)).bearer_auth(token).query(&[("q", q.as_str()), ("fields", fields.as_str()), ("pageSize", "1000"), ("orderBy", "name")]);
+        if let Some(p) = &page {
+            r = r.query(&[("pageToken", p.as_str())]);
+        }
+        let resp = r.send()?;
+        let status = resp.status();
+        let text = resp.text()?;
+        if !status.is_success() {
+            return Err(err(format!("Drive {}: {}", status, text.chars().take(300).collect::<String>())));
+        }
+        let list: FileList = serde_json::from_str(&text).map_err(|e| err(e.to_string()))?;
+        out.extend(list.files);
+        match list.next_page_token {
+            Some(p) => page = Some(p),
+            None => return Ok(out),
+        }
     }
 }
 

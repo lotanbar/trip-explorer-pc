@@ -178,9 +178,8 @@ fn list_plans(root: String) -> Result<Vec<PlanFile>, String> {
 /// unless `overwrite` is set (the plan was loaded from that very file). Returns the file's path.
 #[tauri::command]
 fn save_plan(sync: tauri::State<'_, Arc<sync::SyncHandle>>, root: String, name: String, text: String, overwrite: bool) -> Result<String, String> {
-    let result = save_plan_file(&root, &name, &text, overwrite);
-    sync.poke();
-    result
+    let _ = sync;
+    save_plan_file(&root, &name, &text, overwrite)
 }
 
 fn save_plan_file(root: &str, name: &str, text: &str, overwrite: bool) -> Result<String, String> {
@@ -207,9 +206,8 @@ fn write_text(sync: tauri::State<'_, Arc<sync::SyncHandle>>, path: String, text:
     let file = PathBuf::from(&path);
     let tmp = PathBuf::from(format!("{}.tmp", path));
     fs::write(&tmp, text).map_err(|e| format!("{}: {}", tmp.display(), e))?;
-    let result = fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e));
-    sync.poke();
-    result
+    let _ = sync;
+    fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))
 }
 
 // ── Google Drive sync ─────────────────────────────────────────────────────────────────────────
@@ -223,7 +221,12 @@ fn drive_status(sync: tauri::State<'_, Arc<sync::SyncHandle>>) -> sync::Status {
 #[tauri::command]
 fn drive_set_root(sync: tauri::State<'_, Arc<sync::SyncHandle>>, root: Option<String>) {
     sync.shared.lock().unwrap().root = root.map(PathBuf::from);
-    sync.poke();
+}
+
+/// The Sync button: one pass (Drive's changes come down, this folder's go up; the newer change wins).
+#[tauri::command]
+fn drive_sync(sync: tauri::State<'_, Arc<sync::SyncHandle>>) {
+    sync.request();
 }
 
 /// Opens Google's sign-in page in the browser and waits for it to finish.
@@ -715,14 +718,6 @@ pub fn run() {
             if let Some(window) = app.get_window("main") {
                 let handle = window.clone();
                 window.on_window_event(move |event| {
-                    // Changes still going up to Drive would be lost: the page asks first (see main.ts).
-                    if let WindowEvent::CloseRequested { api, .. } = event {
-                        let pending = sync.pending();
-                        if pending > 0 {
-                            api.prevent_close();
-                            let _ = handle.emit("close-pending", pending);
-                        }
-                    }
                     if let WindowEvent::Resized(_) = event {
                         let state = handle.state::<BrowserState>();
                         if let (Some(webview), Ok(height)) = (browser_webview(&handle), browser_height(&handle, &state)) {
@@ -752,6 +747,7 @@ pub fn run() {
             now_ms,
             drive_status,
             drive_set_root,
+            drive_sync,
             drive_sign_in,
             drive_sign_out,
             drive_list_folders,

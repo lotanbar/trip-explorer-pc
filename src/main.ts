@@ -10,7 +10,7 @@ import { browserPage, closeBrowser, onBrowserChange, openInBrowser } from './bro
 import { closePanel, initPanel } from './panel';
 import { installMapGestures } from './gestures';
 import type { FeatureCollection, Point } from 'geojson';
-import { appClose, scanTrips, cacheEvict, driveSetRoot, driveStatus, listPlans, readText, writeText, CACHE_TTL_MS, type SyncStatus, type TripInfo } from './backend';
+import { scanTrips, cacheEvict, driveSetRoot, driveStatus, driveSync, listPlans, readText, writeText, CACHE_TTL_MS, type SyncStatus, type TripInfo } from './backend';
 import { ask } from './dialog';
 import { openDriveSetup } from './drivePicker';
 import { groupForFile } from './groups';
@@ -49,6 +49,8 @@ async function main(): Promise<void> {
     },
     onRefresh: () => rescan(),
     onDrive: () => void setUpDrive(),
+    onSync: () => void driveSync(),
+    onSyncDetails: () => void showSyncDetails(),
     onCheckedChanged: () => renderChecked(),
     onGroupsChanged: () => renderOsmPois(),
     onTrailsChanged: () => renderTrails(),
@@ -478,12 +480,10 @@ async function main(): Promise<void> {
   // ── Google Drive sync ──
 
   let syncStatus: SyncStatus | null = null;
-  let closeWhenSynced = false;
   let syncRescan: number | undefined;
   const showSync = (s: SyncStatus) => {
     syncStatus = s;
     sidebar.setSync(s);
-    if (closeWhenSynced && s.pending_up === 0 && !s.busy) void appClose();
   };
   async function setUpDrive(): Promise<void> {
     await closeBrowser().catch(() => undefined);
@@ -499,21 +499,14 @@ async function main(): Promise<void> {
     window.clearTimeout(syncRescan);
     syncRescan = window.setTimeout(() => void rescan(), 1000);
   });
-  // Closing while changes are still going up would lose them (see the spec): ask first.
-  await listen<number>('close-pending', async (e) => {
+  /** What the last sync did (or why it failed), in a dialog. */
+  async function showSyncDetails(): Promise<void> {
     await closeBrowser().catch(() => undefined);
-    const n = e.payload;
-    const choice = await ask(
-      `${n === 1 ? 'A change is' : `${n} changes are`} still going up to Google Drive. Closing now loses ${n === 1 ? 'it' : 'them'}.`,
-      [{ label: 'Close anyway', value: 'close' }, { label: 'Close when synced', value: 'wait', primary: true }],
-      'stay',
-    );
-    if (choice === 'close') void appClose();
-    if (choice === 'wait') {
-      closeWhenSynced = true;
-      if (syncStatus && syncStatus.pending_up === 0 && !syncStatus.busy) void appClose();
-    }
-  });
+    const s = syncStatus ?? (await driveStatus());
+    const when = s.last_sync ? new Date(s.last_sync).toLocaleString() : 'never';
+    const lines = s.error ? [`Error: ${s.error}`] : s.last_changes.length ? s.last_changes : ['Nothing changed.'];
+    await ask(`Last sync: ${when}\n\n${lines.join('\n')}`, [{ label: 'OK', value: null, primary: true }], null);
+  }
   await driveSetRoot(settings.root);
   showSync(await driveStatus());
 

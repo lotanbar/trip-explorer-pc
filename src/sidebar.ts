@@ -20,6 +20,10 @@ export interface SidebarCallbacks {
   onRefresh: () => void;
   /** The Drive button: sign in / pick the Drive folder. */
   onDrive: () => void;
+  /** The Sync button: one pass, both ways. */
+  onSync: () => void;
+  /** The Drive line was clicked: what the last sync did. */
+  onSyncDetails: () => void;
   onCheckedChanged: () => void;
   onGroupsChanged: () => void;
   onTrailsChanged: () => void;
@@ -51,10 +55,12 @@ export class Sidebar {
         </div>
         <div id="root-label" class="root-label muted">No folder chosen</div>
         <div class="drive-row">
-          <span id="drive-label" class="drive-label muted">Google Drive: off</span>
-          <button id="drive-button" title="Google Drive sync: sign in and pick the Drive folder">Drive…</button>
+          <span id="drive-label" class="drive-label muted" title="What the last sync did">Google Drive: off</span>
+          <button id="sync-button" class="primary" title="Sync with Google Drive: your changes go up, Drive's come down">Sync</button>
+          <button id="drive-button" title="Google Drive: sign in and pick the Drive folder">Drive…</button>
         </div>
         <div id="drive-progress" class="drive-progress" hidden><div></div></div>
+        <div id="drive-current" class="drive-current muted" hidden></div>
         <div id="tree" class="tree"></div>
       </section>
       <section class="panel-section plans-section">
@@ -85,6 +91,8 @@ export class Sidebar {
     root.querySelector('#pick-root')!.addEventListener('click', () => this.pickRoot());
     root.querySelector('#refresh')!.addEventListener('click', () => cb.onRefresh());
     root.querySelector('#drive-button')!.addEventListener('click', () => cb.onDrive());
+    root.querySelector('#sync-button')!.addEventListener('click', () => cb.onSync());
+    root.querySelector('#drive-label')!.addEventListener('click', () => cb.onSyncDetails());
     root.querySelector('#panel-close')!.addEventListener('click', () => cb.onClose());
 
     this.buildGroupToggles();
@@ -107,9 +115,13 @@ export class Sidebar {
     else if (!s.signed_in) text = s.error ?? 'Google Drive: not signed in';
     else if (!s.folder) text = 'Google Drive: no folder picked';
     else if (s.error) text = `Drive: ${s.error}`;
-    else if (s.busy && s.total > 0) text = `Drive “${s.folder}”: syncing ${s.done} of ${s.total}`;
-    else if (s.busy) text = `Drive “${s.folder}”: checking…`;
-    else text = `Drive “${s.folder}”: ${s.last_sync ? `synced ${time(s.last_sync)}` : 'waiting'}`;
+    else if (s.busy && s.total > 0) text = `Syncing ${s.done} of ${s.total}`;
+    else if (s.busy) text = 'Syncing…';
+    else if (s.last_sync) {
+      const up = s.last_changes.filter((l) => l.startsWith('↑')).length;
+      const down = s.last_changes.filter((l) => l.startsWith('↓')).length;
+      text = `Synced ${time(s.last_sync)}${up || down ? ` · ↑${up} ↓${down}` : ' · no changes'}`;
+    } else text = `Drive “${s.folder}”: not synced yet`;
     label.textContent = text;
     label.title = [s.email, text].filter(Boolean).join('\n');
     label.classList.toggle('muted', !s.folder || !s.signed_in);
@@ -117,6 +129,20 @@ export class Sidebar {
     bar.hidden = !(s.busy && s.total > 0);
     const part = s.bytes_total > 0 ? s.bytes_done / s.bytes_total : s.total > 0 ? s.done / s.total : 0;
     bar.querySelector<HTMLElement>('div')!.style.width = `${Math.round(Math.min(1, part) * 100)}%`;
+    // While syncing: the item on its way, how much is done and roughly how long is left.
+    const cur = this.root.querySelector<HTMLElement>('#drive-current')!;
+    const mb = (b: number) => (b / 1048576).toFixed(b < 10485760 ? 1 : 0);
+    const left = (sec: number) => (sec < 60 ? `${sec} s` : `${Math.round(sec / 60)} min`);
+    const parts = [
+      s.current ?? '',
+      s.bytes_total > 0 ? `${mb(s.bytes_done)} of ${mb(s.bytes_total)} MB` : '',
+      s.eta_s != null ? `~${left(s.eta_s)} left` : '',
+    ].filter(Boolean);
+    cur.hidden = !s.busy || parts.length === 0;
+    cur.textContent = parts.join(' · ');
+    cur.title = cur.textContent;
+    const syncButton = this.root.querySelector<HTMLButtonElement>('#sync-button')!;
+    syncButton.disabled = s.busy || !s.signed_in || !s.folder;
   }
 
   private setRootLabel(root: string | null): void {

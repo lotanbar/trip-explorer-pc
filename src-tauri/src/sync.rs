@@ -1,4 +1,4 @@
-//! Google Drive sync of the whole trips folder. Drive is the truth; the newest change wins.
+//! Google Drive sync of the whole trips folder, one pass per press of the Sync button. The newest change wins.
 //!
 //! Every cycle compares three views of the tree, path by path: the local folder, the Drive folder,
 //! and the base (both sides as they were after the last sync). A side "changed" a file when its
@@ -7,12 +7,11 @@
 //! (on Drive: to the trash; here: to the Recycle Bin), unless the other side changed it since.
 //! A removal plus an addition of the same content is a rename: done as a move, nothing is sent again.
 //!
-//! On the first cycle after the app starts, local changes to files that were synced before lose to
-//! Drive (a change counts only once it has been uploaded; see the spec). Files never synced still go up.
+//! Nothing happens by itself: a pass runs when the user presses Sync (and after a Drive folder is picked).
 //!
 //! The planner (`plan`) is pure; `Engine` scans, talks to Drive and applies the plan.
 
-use crate::drive::{self, Drive, DriveError, RemoteFile};
+use crate::drive::{self, DResult, Drive, DriveError, RemoteFile};
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -21,9 +20,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const REMOTE_EVERY: Duration = Duration::from_secs(30);
-const LOCAL_EVERY: Duration = Duration::from_secs(5);
-const RETRY_AFTER: Duration = Duration::from_secs(30);
+/// The cost of one item for the time-left estimate, as bytes (a request's round trip).
+const ITEM_OVERHEAD: f64 = 64.0 * 1024.0;
+
 
 // ── The three views ──────────────────────────────────────────────────────────────────────────
 
@@ -75,9 +74,6 @@ pub enum Action {
 }
 
 impl Action {
-    fn is_upload_side(&self) -> bool {
-        matches!(self, Action::MkdirRemote(_) | Action::Upload { .. } | Action::MoveRemote { .. } | Action::TrashRemote { .. })
-    }
     fn is_work(&self) -> bool {
         !matches!(self, Action::Record(_) | Action::Forget(_))
     }
@@ -453,6 +449,10 @@ pub struct SyncState {
     pub nodes: HashMap<String, RNode>,
     #[serde(default)]
     pub base: BTreeMap<String, BaseEntry>,
+    #[serde(default)]
+    pub last_sync: Option<i64>,
+    #[serde(default)]
+    pub last_changes: Vec<String>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -474,17 +474,21 @@ pub struct Status {
     pub total: u32,
     pub bytes_done: u64,
     pub bytes_total: u64,
-    /// Changes made here that are not on Drive yet (closing the app now would lose them).
-    pub pending_up: u32,
     pub error: Option<String>,
     pub last_sync: Option<i64>,
+    /// What is being sent or fetched right now (e.g. "↑ Naxos/Portara/media/IMG_001.jpg").
+    pub current: Option<String>,
+    /// Seconds left, from the transfer rate so far (None until something was transferred).
+    pub eta_s: Option<u64>,
+    /// What the last pass did, one line per file or folder ("↑ …" went up, "↓ …" came down).
+    pub last_changes: Vec<String>,
 }
 
 #[derive(Default)]
 pub struct Shared {
     pub status: Status,
     pub root: Option<PathBuf>,
-    /// Something was written here: scan now (also counts as pending until scanned).
+    /// Sync was pressed: run a pass.
     pub dirty: bool,
     /// A new Drive folder was picked: start over with it.
     pub new_folder: Option<(String, String)>,
@@ -500,7 +504,8 @@ pub struct SyncHandle {
 }
 
 impl SyncHandle {
-    pub fn poke(&self) {
+    /// Runs a sync pass (the Sync button).
+    pub fn request(&self) {
         self.shared.lock().unwrap().dirty = true;
         self.wake.notify_all();
     }
@@ -509,14 +514,6 @@ impl SyncHandle {
     }
     pub fn load_auth(&self) -> Option<Auth> {
         serde_json::from_str(&fs::read_to_string(self.auth_file()).ok()?).ok()
-    }
-    /// Changes not on Drive yet: known ones, plus a write not scanned yet.
-    pub fn pending(&self) -> u32 {
-        let s = self.shared.lock().unwrap();
-        if !s.status.signed_in || s.status.folder.is_none() {
-            return 0;
-        }
-        s.status.pending_up + if s.dirty { 1 } else { 0 }
     }
 }
 
@@ -527,11 +524,6 @@ pub struct Engine {
     state: SyncState,
     drive: Option<Drive>,
     md5_cache: HashMap<String, (u64, i64, String)>,
-    last_remote: Option<Instant>,
-    last_local: Option<Instant>,
-    retry_at: Option<Instant>,
-    /// The first cycle since start: local edits to synced files lose to Drive.
-    fresh_start: bool,
     notify: Box<dyn Fn(&Status, bool) + Send>,
 }
 
@@ -547,16 +539,14 @@ impl Engine {
             s.status.signed_in = auth.is_some();
             s.status.email = auth.and_then(|a| a.email);
             s.status.folder = state.folder_name.clone();
+            s.status.last_sync = state.last_sync;
+            s.status.last_changes = state.last_changes.clone();
         }
         let mut engine = Engine {
             handle: handle.clone(),
             state,
             drive: None,
             md5_cache: HashMap::new(),
-            last_remote: None,
-            last_local: None,
-            retry_at: None,
-            fresh_start: true,
             notify: Box::new(notify),
         };
         std::thread::spawn(move || engine.run());
@@ -584,15 +574,15 @@ impl Engine {
 
     fn run(&mut self) {
         loop {
-            let (root, dirty, new_folder, auth_changed) = {
+            let (root, requested, new_folder, auth_changed) = {
                 let mut s = self.handle.shared.lock().unwrap();
-                if !s.dirty && s.new_folder.is_none() && !s.auth_changed {
-                    s = self.handle.wake.wait_timeout(s, Duration::from_secs(1)).unwrap().0;
+                while !s.dirty && s.new_folder.is_none() && !s.auth_changed && !s.stop {
+                    s = self.handle.wake.wait(s).unwrap();
                 }
                 if s.stop {
                     return;
                 }
-                (s.root.clone(), s.dirty, s.new_folder.take(), std::mem::take(&mut s.auth_changed))
+                (s.root.clone(), std::mem::take(&mut s.dirty), s.new_folder.take(), std::mem::take(&mut s.auth_changed))
             };
             if auth_changed {
                 self.drive = None;
@@ -602,53 +592,52 @@ impl Engine {
                     st.email = auth.and_then(|a| a.email);
                     st.error = None;
                 });
-                self.retry_at = None;
             }
+            let mut requested = requested;
             if let Some((id, name)) = new_folder {
                 self.state = SyncState { folder_id: Some(id), folder_name: Some(name.clone()), ..Default::default() };
                 self.save_state();
-                self.last_remote = None;
-                self.retry_at = None;
-                self.fresh_start = false; // nothing was synced with this folder yet: a plain merge
                 self.update(false, |st| {
                     st.folder = Some(name);
                     st.error = None;
+                    st.last_sync = None;
+                    st.last_changes.clear();
                 });
+                requested = true; // picking a folder merges both sides right away
             }
-            let Some(root) = root else { continue };
-            if self.state.folder_id.is_none() || !root.is_dir() {
+            if !requested {
+                continue;
+            }
+            let problem = match (&root, &self.state.folder_id) {
+                (None, _) => Some("Choose the trips folder first"),
+                (Some(r), _) if !r.is_dir() => Some("The trips folder is missing"),
+                (_, None) => Some("Pick a Drive folder first (Drive…)"),
+                _ => None,
+            };
+            if let Some(p) = problem {
+                self.update(false, |st| st.error = Some(p.into()));
                 continue;
             }
             if self.drive.is_none() {
                 match self.handle.load_auth() {
                     Some(a) => self.drive = Some(Drive::new(a.refresh_token)),
-                    None => continue,
+                    None => {
+                        self.update(false, |st| st.error = Some("Sign in to Google first (Drive…)".into()));
+                        continue;
+                    }
                 }
             }
-            let now = Instant::now();
-            if let Some(t) = self.retry_at {
-                if now < t && !dirty {
-                    continue;
-                }
-            }
-            let remote_due = self.last_remote.map(|t| now.duration_since(t) >= REMOTE_EVERY).unwrap_or(true);
-            let local_due = dirty || self.last_local.map(|t| now.duration_since(t) >= LOCAL_EVERY).unwrap_or(true);
-            if !remote_due && !local_due {
-                continue;
-            }
-            match self.cycle(&root, remote_due) {
-                Ok(()) => {
-                    self.retry_at = None;
-                    self.update(false, |st| st.error = None);
-                }
+            match self.cycle(&root.unwrap()) {
+                Ok(()) => self.update(false, |st| st.error = None),
                 Err(e) => {
-                    self.retry_at = Some(Instant::now() + RETRY_AFTER);
                     if e.auth {
                         let _ = fs::remove_file(self.handle.auth_file());
                         self.drive = None;
                     }
                     self.update(false, |st| {
                         st.busy = false;
+                        st.current = None;
+                        st.eta_s = None;
                         st.error = Some(if e.auth { "Signed out of Google: sign in again".into() } else { e.message.clone() });
                         if e.auth {
                             st.signed_in = false;
@@ -659,27 +648,32 @@ impl Engine {
         }
     }
 
-    fn cycle(&mut self, root: &Path, remote_due: bool) -> Result<(), DriveError> {
+    fn cycle(&mut self, root: &Path) -> Result<(), DriveError> {
         let folder = self.state.folder_id.clone().unwrap();
-        if self.state.page_token.is_none() {
-            self.update(false, |st| st.busy = true);
+        self.update(false, |st| {
+            st.busy = true;
+            st.done = 0;
+            st.total = 0;
+            st.bytes_done = 0;
+            st.bytes_total = 0;
+            st.current = Some("Checking Drive…".into());
+            st.eta_s = None;
+        });
+        // Drive as it is right now: the whole folder is listed on every pass (Drive's change feed can lag
+        // behind by seconds, and a pass usually follows right after the other device's).
+        {
             let drive = self.drive.as_mut().unwrap();
-            let token = drive.start_page_token()?;
+            let top = drive.get(&folder)?;
+            if top.trashed {
+                return Err(DriveError { message: "The Drive folder was removed or trashed; pick a folder again".into(), auth: false });
+            }
             let mut nodes = HashMap::new();
             list_tree(drive, &folder, &mut nodes)?;
             self.state.nodes = nodes;
-            self.state.page_token = Some(token);
-            self.save_state();
-            self.last_remote = Some(Instant::now());
-        } else if remote_due {
-            self.pull_changes(&folder)?;
-            self.last_remote = Some(Instant::now());
         }
 
-        // The local view; a write made during the scan is caught next time.
-        self.handle.shared.lock().unwrap().dirty = false;
+        self.update(false, |st| st.current = Some("Looking at the trips folder…".into()));
         let mut local = scan_local(root);
-        self.last_local = Some(Instant::now());
         for (path, e) in local.iter_mut() {
             if e.dir {
                 continue;
@@ -702,9 +696,13 @@ impl Engine {
             }
         }
         let remote = remote_paths(&folder, &self.state.nodes);
-        let drive_wins = self.fresh_start && !self.state.base.is_empty();
-        let actions = plan(&local, &remote, &self.state.base, drive_wins);
-        self.fresh_start = false;
+        if remote.is_empty() && !self.state.base.is_empty() {
+            return Err(DriveError {
+                message: "The Drive folder is empty, but it was synced before: nothing was changed here. Pick the folder again to start over".into(),
+                auth: false,
+            });
+        }
+        let actions = plan(&local, &remote, &self.state.base, false);
 
         let work: Vec<&Action> = actions.iter().filter(|a| a.is_work()).collect();
         let size_of = |a: &Action| -> u64 {
@@ -716,17 +714,13 @@ impl Engine {
         };
         let total = work.len() as u32;
         let bytes_total: u64 = work.iter().map(|a| size_of(a)).sum();
-        let mut pending_up = work.iter().filter(|a| a.is_upload_side()).count() as u32;
-        if total > 0 {
-            self.update(false, |st| {
-                st.busy = true;
-                st.done = 0;
-                st.total = total;
-                st.bytes_done = 0;
-                st.bytes_total = bytes_total;
-                st.pending_up = pending_up;
-            });
-        }
+        self.update(false, |st| {
+            st.total = total;
+            st.bytes_total = bytes_total;
+            st.current = None;
+        });
+        let started = Instant::now();
+        let mut changes: Vec<String> = Vec::new();
 
         let mut ids: HashMap<String, String> = remote.iter().filter(|(_, e)| e.dir).map(|(p, e)| (p.clone(), e.id.clone())).collect();
         ids.insert(String::new(), folder.clone());
@@ -741,6 +735,11 @@ impl Engine {
                 Action::DeleteLocal(path) => gone_local.iter().any(|g| under(path, g)),
                 _ => false,
             };
+            // Items inside a folder that was just removed went with it: not listed on their own.
+            if let Some(line) = describe(a).filter(|_| !skip) {
+                self.update(false, |st| st.current = Some(line.clone()));
+                changes.push(line);
+            }
             if !skip {
                 self.apply(root, a, &local, &remote, &mut ids)?;
             } else {
@@ -760,71 +759,34 @@ impl Engine {
             if a.is_work() {
                 done += 1;
                 bytes_done += size_of(a);
-                if a.is_upload_side() {
-                    pending_up -= 1;
-                }
                 if last_save.elapsed() > Duration::from_secs(2) {
                     self.save_state();
                     last_save = Instant::now();
                 }
                 let changed_now = local_changed && matches!(a, Action::Download { .. } | Action::MoveLocal { .. });
+                // Time left: each item costs its bytes plus a fixed request overhead, at the pace so far.
+                let secs = started.elapsed().as_secs_f64();
+                let work_done = bytes_done as f64 + done as f64 * ITEM_OVERHEAD;
+                let work_left = (bytes_total - bytes_done) as f64 + (total - done) as f64 * ITEM_OVERHEAD;
+                let eta = if secs > 1.0 && done < total { Some((work_left / (work_done / secs)).round() as u64) } else { None };
                 self.update(changed_now, |st| {
                     st.done = done;
                     st.bytes_done = bytes_done;
-                    st.pending_up = pending_up;
+                    st.eta_s = eta;
                 });
             }
         }
-        self.save_state();
         let finished = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+        self.state.last_sync = Some(finished);
+        self.state.last_changes = changes.clone();
+        self.save_state();
         self.update(local_changed, |st| {
             st.busy = false;
-            st.pending_up = 0;
+            st.current = None;
+            st.eta_s = None;
             st.last_sync = Some(finished);
-            if total == 0 {
-                st.done = 0;
-                st.total = 0;
-            }
+            st.last_changes = changes;
         });
-        Ok(())
-    }
-
-    /// Applies Drive's changes since the last look to the known tree.
-    fn pull_changes(&mut self, folder: &str) -> Result<(), DriveError> {
-        let drive = self.drive.as_mut().unwrap();
-        let (changes, token) = drive.changes(self.state.page_token.as_deref().unwrap())?;
-        if changes.is_empty() {
-            self.state.page_token = Some(token);
-            return Ok(());
-        }
-        let before: HashSet<String> = remote_paths(folder, &self.state.nodes).values().map(|e| e.id.clone()).collect();
-        for c in &changes {
-            if c.file_id == folder && (c.removed || c.file.as_ref().map(|f| f.trashed).unwrap_or(false)) {
-                return Err(DriveError { message: "The Drive folder was removed or trashed; pick a folder again".into(), auth: false });
-            }
-            if c.file_id == folder || (!c.removed && c.file.is_none()) {
-                continue;
-            }
-            match c.file.as_ref().and_then(|f| if c.removed { None } else { RNode::from(f) }) {
-                Some(n) => {
-                    self.state.nodes.insert(c.file_id.clone(), n);
-                }
-                None => {
-                    self.state.nodes.remove(&c.file_id);
-                }
-            }
-        }
-        // Keep only what is inside the folder; a folder that newly appeared in it (moved in from
-        // elsewhere in Drive) has its contents listed, as those files did not change themselves.
-        let now = remote_paths(folder, &self.state.nodes);
-        let inside: HashSet<String> = now.values().map(|e| e.id.clone()).collect();
-        self.state.nodes.retain(|id, _| inside.contains(id));
-        let arrived: Vec<String> = now.values().filter(|e| e.dir && !before.contains(&e.id)).map(|e| e.id.clone()).collect();
-        for id in arrived {
-            list_tree(drive, &id, &mut self.state.nodes)?;
-        }
-        self.state.page_token = Some(token);
-        self.save_state();
         Ok(())
     }
 
@@ -937,18 +899,44 @@ impl Engine {
     }
 }
 
-/// Everything under a Drive folder, into `nodes` (breadth first, one request per folder).
+/// One line for the progress and the "what changed" list: ↑ went to Drive, ↓ came from Drive.
+fn describe(a: &Action) -> Option<String> {
+    Some(match a {
+        Action::MkdirRemote(p) => format!("↑ new folder {}", p),
+        Action::Upload { path, .. } => format!("↑ {}", path),
+        Action::MoveRemote { from, to, .. } => format!("↑ renamed {} → {}", from, to),
+        Action::TrashRemote { path, .. } => format!("↑ removed {}", path),
+        Action::MkdirLocal(p) => format!("↓ new folder {}", p),
+        Action::Download { path, .. } => format!("↓ {}", path),
+        Action::MoveLocal { from, to, .. } => format!("↓ renamed {} → {}", from, to),
+        Action::DeleteLocal(p) => format!("↓ removed {}", p),
+        Action::Record(_) | Action::Forget(_) => return None,
+    })
+}
+
+/// Everything under a Drive folder, into `nodes`: level by level, up to 8 folders listed at once.
 fn list_tree(drive: &mut Drive, top: &str, nodes: &mut HashMap<String, RNode>) -> Result<(), DriveError> {
-    let mut queue = vec![top.to_string()];
-    while let Some(dir) = queue.pop() {
-        for f in drive.children(&dir, false)? {
-            if let Some(n) = RNode::from(&f) {
-                if n.dir {
-                    queue.push(f.id.clone());
+    let (http, token) = drive.lister()?;
+    let mut level = vec![top.to_string()];
+    while !level.is_empty() {
+        let mut next = Vec::new();
+        for batch in level.chunks(8) {
+            let results: Vec<DResult<Vec<RemoteFile>>> = std::thread::scope(|sc| {
+                let handles: Vec<_> = batch.iter().map(|dir| sc.spawn(|| drive::children_with(&http, &token, dir, false))).collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            for r in results {
+                for f in r? {
+                    if let Some(n) = RNode::from(&f) {
+                        if n.dir {
+                            next.push(f.id.clone());
+                        }
+                        nodes.insert(f.id.clone(), n);
+                    }
                 }
-                nodes.insert(f.id.clone(), n);
             }
         }
+        level = next;
     }
     Ok(())
 }
@@ -1073,8 +1061,36 @@ mod tests {
     }
 }
 
+
+/// A small trips tree for the live tests (two POIs, two recordings, two plans).
+#[cfg(test)]
+pub(crate) fn write_sample(root: &Path) {
+    let files: [(&str, &str); 11] = [
+        ("Greece 2026/Kastro cave/coordinates.txt", "37.1051, 25.3760"),
+        ("Greece 2026/Kastro cave/datetime.txt", "2026-09-26 11-00"),
+        ("Greece 2026/Kastro cave/description.txt", ""),
+        ("Greece 2026/Portara/coordinates.txt", "37.1101, 25.3723"),
+        ("Greece 2026/Portara/datetime.txt", "2026-09-26 10-20"),
+        ("Greece 2026/Portara/description.txt", "The big marble gate"),
+        ("Greece 2026/Portara/group-archaeology.txt", ""),
+        ("Greece 2026/recordings/2026-09-26 10-10-05 - 10-30-04.gpx", "<gpx><trk><trkseg><trkpt lat=\"37.1\" lon=\"25.37\"/></trkseg></trk></gpx>"),
+        ("Greece 2026/recordings/2026-09-27 16-02-40 - recording.gpx", "<gpx><trk><trkseg><trkpt lat=\"37.2\" lon=\"25.4\"/></trkseg></trk></gpx>"),
+        ("plans/Naxos.txt", "37.1101, 25.3723, Portara
+"),
+        ("plans/Naxos Imported.txt", "37.0835, 25.4521, Kouros of Flerio
+37.0291, 25.4313, Demeter Temple
+"),
+    ];
+    for (rel, text) in files {
+        let p = local_path(root, rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, text).unwrap();
+    }
+    fs::create_dir_all(root.join("Greece 2026/Portara/media")).unwrap();
+}
+
 /// Runs against real Google Drive with the app's saved sign-in (`cargo test live -- --ignored --nocapture`).
-/// Works in a fresh subfolder of "Trip Explorer test" on Drive and a temp copy of trips-sample.
+/// Works in a fresh subfolder of "Trip Explorer test" on Drive and a temp sample tree.
 #[cfg(test)]
 mod live {
     use super::*;
@@ -1129,7 +1145,7 @@ mod live {
     fn start(data: &Path, root: &Path) -> Arc<SyncHandle> {
         let h = Engine::start(data.to_path_buf(), |_, _| {});
         h.shared.lock().unwrap().root = Some(root.to_path_buf());
-        h.poke();
+        h.request();
         h
     }
 
@@ -1153,7 +1169,7 @@ mod live {
         let _ = fs::remove_dir_all(&tmp);
         let root = tmp.join("trips");
         let data = tmp.join("data");
-        copy_dir(Path::new("C:/Users/Lotan/Desktop/trips-sample"), &root);
+        write_sample(&root);
         fs::create_dir_all(&data).unwrap();
         fs::copy(appdata.join("drive_auth.json"), data.join("drive_auth.json")).unwrap();
 
@@ -1161,6 +1177,7 @@ mod live {
         let h = start(&data, &root);
         h.shared.lock().unwrap().new_folder = Some((folder.clone(), run.clone()));
         h.wake.notify_all();
+        std::thread::sleep(Duration::from_millis(200));
         settle(&h, "initial upload", Duration::from_secs(120));
         assert_same(&mut d, &folder, &root, "initial upload");
         let before = remote_tree(&mut d, &folder);
@@ -1168,14 +1185,14 @@ mod live {
         // 2. A local edit goes up (same file id).
         let desc = root.join("Greece 2026/Kastro cave/description.txt");
         fs::write(&desc, "Edited on the PC").unwrap();
-        h.poke();
+        h.request();
         settle(&h, "local edit", Duration::from_secs(60));
         assert_same(&mut d, &folder, &root, "local edit");
         assert_eq!(remote_tree(&mut d, &folder)["Greece 2026/Kastro cave/description.txt"].id, before["Greece 2026/Kastro cave/description.txt"].id);
 
         // 3. A local POI rename is a move on Drive: the files keep their ids.
         fs::rename(root.join("Greece 2026/Portara"), root.join("Greece 2026/Portara of Naxos")).unwrap();
-        h.poke();
+        h.request();
         settle(&h, "local rename", Duration::from_secs(60));
         assert_same(&mut d, &folder, &root, "local rename");
         let after = remote_tree(&mut d, &folder);
@@ -1196,7 +1213,7 @@ mod live {
         // 6. A file trashed on Drive goes here too.
         d.trash(&after["Greece 2026/Kastro cave/datetime.txt"].id).unwrap();
         let kastro = "Greece 2026/Kastro cave (closed)";
-        std::thread::sleep(Duration::from_secs(32));
+        h.request();
         settle(&h, "Drive changes", Duration::from_secs(60));
         assert_same(&mut d, &folder, &root, "Drive changes");
         assert_eq!(fs::read_to_string(root.join(plan_path)).unwrap(), "Edited on the phone\n");
@@ -1205,19 +1222,19 @@ mod live {
         assert!(!root.join("Greece 2026/Kastro cave").exists());
         assert!(root.join(kastro).join("description.txt").exists());
         assert!(!root.join(kastro).join("datetime.txt").exists());
-        // 6b. A later cycle keeps the renamed folder (its Drive node is still known).
-        std::thread::sleep(Duration::from_secs(32));
+        // 6b. A later pass keeps the renamed folder (its Drive node is still known).
+        h.request();
         settle(&h, "after folder rename", Duration::from_secs(60));
         assert_same(&mut d, &folder, &root, "after folder rename");
         assert!(root.join(kastro).join("description.txt").exists());
 
         // 7. A local removal goes to Drive's trash.
         fs::remove_file(root.join("plans/Naxos Imported.txt")).unwrap();
-        h.poke();
+        h.request();
         settle(&h, "local removal", Duration::from_secs(60));
         assert_same(&mut d, &folder, &root, "local removal");
 
-        // 8. App closed with an unsynced edit to a synced file: on the next start Drive wins; a new file still goes up.
+        // 8. App closed with an unsynced edit: the next Sync after a restart sends it up (newest wins), with a new file.
         h.shared.lock().unwrap().stop = true;
         std::thread::sleep(Duration::from_secs(2));
         fs::write(root.join(plan_path), "Unsynced PC edit\n").unwrap();
@@ -1225,7 +1242,7 @@ mod live {
         let h2 = start(&data, &root);
         settle(&h2, "restart", Duration::from_secs(60));
         assert_same(&mut d, &folder, &root, "restart");
-        assert_eq!(fs::read_to_string(root.join(plan_path)).unwrap(), "Edited on the phone\n");
+        assert_eq!(fs::read_to_string(root.join(plan_path)).unwrap(), "Unsynced PC edit\n");
         assert!(root.join("plans/New plan.txt").exists());
         h2.shared.lock().unwrap().stop = true;
 
@@ -1255,7 +1272,7 @@ mod live_join {
                     if e.path().is_dir() { copy_dir(&e.path(), &to.join(e.file_name())) } else { fs::copy(e.path(), to.join(e.file_name())).unwrap(); }
                 }
             }
-            copy_dir(Path::new("C:/Users/Lotan/Desktop/trips-sample"), &root);
+            write_sample(&root);
             fs::create_dir_all(&data).unwrap();
             fs::copy(appdata.join("drive_auth.json"), data.join("drive_auth.json")).unwrap();
         }
@@ -1265,7 +1282,7 @@ mod live_join {
         if fresh {
             h.shared.lock().unwrap().new_folder = Some((folder, "phone run".into()));
         }
-        h.poke();
+        h.request();
         let t0 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
         loop {
             std::thread::sleep(Duration::from_millis(300));
