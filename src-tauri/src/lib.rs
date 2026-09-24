@@ -1,13 +1,16 @@
 //! Trip Explorer PC backend: reads the trips folder tree, persists settings and keeps the
-//! on-disk Overpass cache, and writes plan files into `trips/plans/`. Nothing here ever deletes a
-//! file inside the trips folder; the only writes are plan files, on Save.
+//! on-disk Overpass cache, and writes plan files into `trips/plans/`. The trips folder is kept in
+//! sync with a Google Drive folder (see `sync`); that is the only code that removes anything in it.
+
+mod drive;
+mod sync;
 
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::Mutex;
-use tauri::{LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl, WindowEvent};
+use std::sync::{Arc, Mutex};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl, WindowEvent};
 
 #[derive(Serialize)]
 struct Recording {
@@ -174,8 +177,14 @@ fn list_plans(root: String) -> Result<Vec<PlanFile>, String> {
 /// Writes `trips/plans/<name>.txt` (creating `plans/` if needed). An existing file is refused
 /// unless `overwrite` is set (the plan was loaded from that very file). Returns the file's path.
 #[tauri::command]
-fn save_plan(root: String, name: String, text: String, overwrite: bool) -> Result<String, String> {
-    let dir = plans_dir(&root);
+fn save_plan(sync: tauri::State<'_, Arc<sync::SyncHandle>>, root: String, name: String, text: String, overwrite: bool) -> Result<String, String> {
+    let result = save_plan_file(&root, &name, &text, overwrite);
+    sync.poke();
+    result
+}
+
+fn save_plan_file(root: &str, name: &str, text: &str, overwrite: bool) -> Result<String, String> {
+    let dir = plans_dir(root);
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
     let file = dir.join(format!("{}.txt", name));
     if file.exists() && !overwrite {
@@ -194,11 +203,100 @@ fn read_text(path: String) -> Result<String, String> {
 
 /// Writes a file the user picked in a save dialog (GPX export), through a temp file next to it.
 #[tauri::command]
-fn write_text(path: String, text: String) -> Result<(), String> {
+fn write_text(sync: tauri::State<'_, Arc<sync::SyncHandle>>, path: String, text: String) -> Result<(), String> {
     let file = PathBuf::from(&path);
     let tmp = PathBuf::from(format!("{}.tmp", path));
     fs::write(&tmp, text).map_err(|e| format!("{}: {}", tmp.display(), e))?;
-    fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))
+    let result = fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e));
+    sync.poke();
+    result
+}
+
+// ── Google Drive sync ─────────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn drive_status(sync: tauri::State<'_, Arc<sync::SyncHandle>>) -> sync::Status {
+    sync.shared.lock().unwrap().status.clone()
+}
+
+/// The local trips folder the sync works on (None: no folder chosen).
+#[tauri::command]
+fn drive_set_root(sync: tauri::State<'_, Arc<sync::SyncHandle>>, root: Option<String>) {
+    sync.shared.lock().unwrap().root = root.map(PathBuf::from);
+    sync.poke();
+}
+
+/// Opens Google's sign-in page in the browser and waits for it to finish.
+#[tauri::command]
+async fn drive_sign_in(sync: tauri::State<'_, Arc<sync::SyncHandle>>) -> Result<String, String> {
+    let handle = sync.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = drive::sign_in(|url| tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string()))?;
+        let email = drive::Drive::new(token.clone()).about_email().map_err(|e| e.message)?;
+        let auth = sync::Auth { refresh_token: token, email: Some(email.clone()) };
+        fs::write(handle.auth_file(), serde_json::to_string(&auth).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        handle.shared.lock().unwrap().auth_changed = true;
+        handle.wake.notify_all();
+        Ok(email)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn drive_sign_out(sync: tauri::State<'_, Arc<sync::SyncHandle>>) {
+    let _ = fs::remove_file(sync.auth_file());
+    sync.shared.lock().unwrap().auth_changed = true;
+    sync.wake.notify_all();
+}
+
+#[derive(Serialize)]
+struct DriveFolder {
+    id: String,
+    name: String,
+}
+
+fn drive_client(sync: &sync::SyncHandle) -> Result<drive::Drive, String> {
+    let auth = sync.load_auth().ok_or("Not signed in to Google")?;
+    Ok(drive::Drive::new(auth.refresh_token))
+}
+
+/// The subfolders of a Drive folder (`root`: My Drive), by name.
+#[tauri::command]
+async fn drive_list_folders(sync: tauri::State<'_, Arc<sync::SyncHandle>>, parent: String) -> Result<Vec<DriveFolder>, String> {
+    let handle = sync.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d = drive_client(&handle)?;
+        let list = d.children(&parent, true).map_err(|e| e.message)?;
+        Ok(list.into_iter().map(|f| DriveFolder { id: f.id, name: f.name }).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn drive_create_folder(sync: tauri::State<'_, Arc<sync::SyncHandle>>, parent: String, name: String) -> Result<DriveFolder, String> {
+    let handle = sync.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut d = drive_client(&handle)?;
+        let f = d.create_folder(&parent, &name).map_err(|e| e.message)?;
+        Ok(DriveFolder { id: f.id, name: f.name })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Syncs the trips folder with this Drive folder from now on (a fresh start: both sides are merged).
+#[tauri::command]
+fn drive_pick_folder(sync: tauri::State<'_, Arc<sync::SyncHandle>>, id: String, name: String) {
+    sync.shared.lock().unwrap().new_folder = Some((id, name));
+    sync.wake.notify_all();
+}
+
+/// Closes the app even though changes are still going up to Drive.
+#[tauri::command]
+fn app_close(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 fn settings_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -603,10 +701,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(BrowserState::default())
         .setup(|app| {
+            let data_dir = app.path().app_data_dir()?;
+            fs::create_dir_all(&data_dir)?;
+            let emitter = app.handle().clone();
+            let sync = sync::Engine::start(data_dir, move |status, local_changed| {
+                let _ = emitter.emit("sync-status", status.clone());
+                if local_changed {
+                    let _ = emitter.emit("sync-changed", ());
+                }
+            });
+            app.manage(sync.clone());
             // Keep the embedded browser fitted to the panel when the window is resized.
             if let Some(window) = app.get_window("main") {
                 let handle = window.clone();
                 window.on_window_event(move |event| {
+                    // Changes still going up to Drive would be lost: the page asks first (see main.ts).
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        let pending = sync.pending();
+                        if pending > 0 {
+                            api.prevent_close();
+                            let _ = handle.emit("close-pending", pending);
+                        }
+                    }
                     if let WindowEvent::Resized(_) = event {
                         let state = handle.state::<BrowserState>();
                         if let (Some(webview), Ok(height)) = (browser_webview(&handle), browser_height(&handle, &state)) {
@@ -633,7 +749,15 @@ pub fn run() {
             cache_get,
             cache_put,
             cache_evict,
-            now_ms
+            now_ms,
+            drive_status,
+            drive_set_root,
+            drive_sign_in,
+            drive_sign_out,
+            drive_list_folders,
+            drive_create_folder,
+            drive_pick_folder,
+            app_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

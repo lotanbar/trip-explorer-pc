@@ -6,7 +6,7 @@
  */
 
 import { open } from '@tauri-apps/plugin-dialog';
-import type { TripInfo } from './backend';
+import type { SyncStatus, TripInfo } from './backend';
 import { GROUPS, groupForFile, groupById, NO_GROUP } from './groups';
 import { planStopKey, type SavedPlan } from './plan';
 import { iconSvg } from './icons';
@@ -18,6 +18,8 @@ export interface SidebarCallbacks {
   onClose: () => void;
   onRootChanged: (root: string) => void;
   onRefresh: () => void;
+  /** The Drive button: sign in / pick the Drive folder. */
+  onDrive: () => void;
   onCheckedChanged: () => void;
   onGroupsChanged: () => void;
   onTrailsChanged: () => void;
@@ -48,6 +50,11 @@ export class Sidebar {
           </div>
         </div>
         <div id="root-label" class="root-label muted">No folder chosen</div>
+        <div class="drive-row">
+          <span id="drive-label" class="drive-label muted">Google Drive: off</span>
+          <button id="drive-button" title="Google Drive sync: sign in and pick the Drive folder">Drive…</button>
+        </div>
+        <div id="drive-progress" class="drive-progress" hidden><div></div></div>
         <div id="tree" class="tree"></div>
       </section>
       <section class="panel-section plans-section">
@@ -77,6 +84,7 @@ export class Sidebar {
 
     root.querySelector('#pick-root')!.addEventListener('click', () => this.pickRoot());
     root.querySelector('#refresh')!.addEventListener('click', () => cb.onRefresh());
+    root.querySelector('#drive-button')!.addEventListener('click', () => cb.onDrive());
     root.querySelector('#panel-close')!.addEventListener('click', () => cb.onClose());
 
     this.buildGroupToggles();
@@ -87,6 +95,28 @@ export class Sidebar {
   setStatus(message: string | null): void {
     this.statusEl.textContent = message ?? '';
     this.statusEl.hidden = !message;
+  }
+
+  /** The Drive line under the folder: where it syncs, how far along, or what went wrong. */
+  setSync(s: SyncStatus): void {
+    const label = this.root.querySelector<HTMLElement>('#drive-label')!;
+    const bar = this.root.querySelector<HTMLElement>('#drive-progress')!;
+    const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let text: string;
+    if (!s.configured) text = 'Google Drive: not in this build';
+    else if (!s.signed_in) text = s.error ?? 'Google Drive: not signed in';
+    else if (!s.folder) text = 'Google Drive: no folder picked';
+    else if (s.error) text = `Drive: ${s.error}`;
+    else if (s.busy && s.total > 0) text = `Drive “${s.folder}”: syncing ${s.done} of ${s.total}`;
+    else if (s.busy) text = `Drive “${s.folder}”: checking…`;
+    else text = `Drive “${s.folder}”: ${s.last_sync ? `synced ${time(s.last_sync)}` : 'waiting'}`;
+    label.textContent = text;
+    label.title = [s.email, text].filter(Boolean).join('\n');
+    label.classList.toggle('muted', !s.folder || !s.signed_in);
+    label.classList.toggle('error', !!s.error);
+    bar.hidden = !(s.busy && s.total > 0);
+    const part = s.bytes_total > 0 ? s.bytes_done / s.bytes_total : s.total > 0 ? s.done / s.total : 0;
+    bar.querySelector<HTMLElement>('div')!.style.width = `${Math.round(Math.min(1, part) * 100)}%`;
   }
 
   private setRootLabel(root: string | null): void {

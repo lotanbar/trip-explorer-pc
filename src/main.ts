@@ -5,11 +5,14 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { openMyPoi, openOsmPoi, openPlace, openTrail } from './actions';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { browserPage, closeBrowser, onBrowserChange, openInBrowser } from './browser';
 import { closePanel, initPanel } from './panel';
 import { installMapGestures } from './gestures';
 import type { FeatureCollection, Point } from 'geojson';
-import { scanTrips, cacheEvict, listPlans, readText, writeText, CACHE_TTL_MS, type TripInfo } from './backend';
+import { appClose, scanTrips, cacheEvict, driveSetRoot, driveStatus, listPlans, readText, writeText, CACHE_TTL_MS, type SyncStatus, type TripInfo } from './backend';
+import { ask } from './dialog';
+import { openDriveSetup } from './drivePicker';
 import { groupForFile } from './groups';
 import { addMarkerImages, addOverlayLayers, LAYERS, lastData, setData, SRC_MY_POIS, SRC_OSM_POIS, SRC_PLANS, SRC_RECORDINGS, SRC_SEARCH, SRC_TRAILS } from './mapLayers';
 import { loadMapStyle, placeLabelLayerIds } from './mapStyle';
@@ -40,8 +43,12 @@ async function main(): Promise<void> {
       closeBrowser().catch(() => undefined);
       closePanel();
     },
-    onRootChanged: () => rescan(),
+    onRootChanged: (root) => {
+      void driveSetRoot(root);
+      void rescan();
+    },
     onRefresh: () => rescan(),
+    onDrive: () => void setUpDrive(),
     onCheckedChanged: () => renderChecked(),
     onGroupsChanged: () => renderOsmPois(),
     onTrailsChanged: () => renderTrails(),
@@ -467,6 +474,48 @@ async function main(): Promise<void> {
       cancelable: true,
     }));
   }, { passive: false });
+
+  // ── Google Drive sync ──
+
+  let syncStatus: SyncStatus | null = null;
+  let closeWhenSynced = false;
+  let syncRescan: number | undefined;
+  const showSync = (s: SyncStatus) => {
+    syncStatus = s;
+    sidebar.setSync(s);
+    if (closeWhenSynced && s.pending_up === 0 && !s.busy) void appClose();
+  };
+  async function setUpDrive(): Promise<void> {
+    await closeBrowser().catch(() => undefined);
+    if (!settings.root) {
+      await ask('Choose the trips folder first (Folder…): that is the folder kept in sync with Drive.', [{ label: 'OK', value: null, primary: true }], null);
+      return;
+    }
+    await openDriveSetup(syncStatus ?? (await driveStatus()));
+  }
+  await listen<SyncStatus>('sync-status', (e) => showSync(e.payload));
+  // Files came down from Drive (or went): read the folders again, once things settle.
+  await listen('sync-changed', () => {
+    window.clearTimeout(syncRescan);
+    syncRescan = window.setTimeout(() => void rescan(), 1000);
+  });
+  // Closing while changes are still going up would lose them (see the spec): ask first.
+  await listen<number>('close-pending', async (e) => {
+    await closeBrowser().catch(() => undefined);
+    const n = e.payload;
+    const choice = await ask(
+      `${n === 1 ? 'A change is' : `${n} changes are`} still going up to Google Drive. Closing now loses ${n === 1 ? 'it' : 'them'}.`,
+      [{ label: 'Close anyway', value: 'close' }, { label: 'Close when synced', value: 'wait', primary: true }],
+      'stay',
+    );
+    if (choice === 'close') void appClose();
+    if (choice === 'wait') {
+      closeWhenSynced = true;
+      if (syncStatus && syncStatus.pending_up === 0 && !syncStatus.busy) void appClose();
+    }
+  });
+  await driveSetRoot(settings.root);
+  showSync(await driveStatus());
 
   await rescan();
   scheduleFetch();

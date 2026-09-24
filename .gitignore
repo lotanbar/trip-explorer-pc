@@ -4,3 +4,4 @@ src/track-cleanup/node_modules
 src-tauri/target
 src-tauri/gen/schemas
 *.log
+google_oauth.json

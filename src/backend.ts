@@ -59,3 +59,38 @@ export const cacheEvict = (namespace: string, maxAgeMs: number) =>
   invoke<number>('cache_evict', { namespace, maxAgeMs });
 
 export const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+// ── Google Drive sync ──
+
+export interface SyncStatus {
+  configured: boolean;
+  signed_in: boolean;
+  email: string | null;
+  folder: string | null;
+  busy: boolean;
+  done: number;
+  total: number;
+  bytes_done: number;
+  bytes_total: number;
+  /** Changes made here that are not on Drive yet. */
+  pending_up: number;
+  error: string | null;
+  last_sync: number | null;
+}
+
+export interface DriveFolder {
+  id: string;
+  name: string;
+}
+
+export const driveStatus = () => invoke<SyncStatus>('drive_status');
+export const driveSetRoot = (root: string | null) => invoke<void>('drive_set_root', { root });
+/** Opens Google's sign-in page in the browser; resolves with the account's email once done. */
+export const driveSignIn = () => invoke<string>('drive_sign_in');
+export const driveSignOut = () => invoke<void>('drive_sign_out');
+/** Subfolders of a Drive folder; `root` is My Drive. */
+export const driveListFolders = (parent: string) => invoke<DriveFolder[]>('drive_list_folders', { parent });
+export const driveCreateFolder = (parent: string, name: string) => invoke<DriveFolder>('drive_create_folder', { parent, name });
+export const drivePickFolder = (id: string, name: string) => invoke<void>('drive_pick_folder', { id, name });
+/** Quits even though changes are still going up to Drive. */
+export const appClose = () => invoke<void>('app_close');
