@@ -1,6 +1,6 @@
 /**
  * Bundled SVG icons (Maki, Temaki or hand-drawn) and the marker / line-pattern images built from
- * them for MapLibre. Markers follow the reference app's pin: round head, pointed tail, group color
+ * them for MapLibre. Markers are a pin: round head, pointed tail, group color
  * fill, white icon, thin white outline. My POIs have a squircle head, OSM POIs a round one.
  */
 

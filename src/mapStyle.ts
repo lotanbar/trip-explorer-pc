@@ -1,6 +1,6 @@
 /**
  * Base map: OpenFreeMap vector tiles with its dark style, plus hillshading from the open
- * Mapzen/Tilezen terrain tiles on AWS (Terrarium encoding) with the reference app's settings,
+ * Mapzen/Tilezen terrain tiles on AWS (Terrarium encoding) with the spec's settings,
  * inserted below the first label layer.
  */
 

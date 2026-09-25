@@ -4,8 +4,7 @@ Track cleanup for the Trip Explorer PC app: turns a raw 1 Hz GPX recording into 
 for the map. **Display only** — the GPX file is never modified.
 
 This is a new, standalone TypeScript module written for the new PC app (Tauri + MapLibre). It has
-no dependency on the rest of this repository. The Kotlin app in this repo served as a reference
-for what works (its tuned constants are the starting values here); the design is its own.
+no dependency on the rest of this repository.
 
 ## What it does
 

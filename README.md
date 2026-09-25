@@ -28,7 +28,7 @@ Needs Node, Rust (MSVC toolchain on Windows) and the WebView2 runtime (Windows) 
 | `src/recordings.ts` | GPX loading and the display-only track cleanup |
 | `src/searchWindow.ts`, `src/photon.ts`, `src/plan.ts`, `src/gpx.ts`, `src/names.ts` | Search and plan: the window in the side panel, Photon search-as-you-type plus my own POIs by name, the plan model and file format, GPX import/export, name rules |
 | `src/screens.ts`, `src/dialog.ts` | The side panel's screen history (Alt+Left / Alt+Right); the in-app question box |
-| `src/track-cleanup/` | The cleanup module, copied as-is from the reference repo's `track-cleanup` branch (`npm test` inside it) |
+| `src/track-cleanup/` | The display-only track cleanup module, standalone with its own tests (`npm test` inside it) |
 | `src/icons/` | Bundled SVG icons (Maki, Temaki or hand-drawn) |
 
 Deviations from the spec (agreed on 2026-09-22):

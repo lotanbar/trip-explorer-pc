@@ -19,7 +19,7 @@ export function poiSearchQuery(name: string, place: string): string {
 
 const placeCache = new Map<string, string>();
 
-/** Town and country of a point, from Nominatim (within its usage limits: only on click, cached). */
+/** The town of a point, from Nominatim (within its usage limits: only on click, cached). */
 export async function lookupPlace(lat: number, lon: number): Promise<string> {
   const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
   const cached = placeCache.get(key);
@@ -52,7 +52,7 @@ export async function openMyPoi(folder: string): Promise<void> {
   await openPath(folder);
 }
 
-/** DuckDuckGo search for the POI name plus its town and country. Unnamed POIs do nothing. */
+/** Google search for the POI name plus its town (no country). Unnamed POIs do nothing. */
 export async function openOsmPoi(name: string | null, lat: number, lon: number): Promise<void> {
   if (!name) return;
   const place = await lookupPlace(lat, lon);

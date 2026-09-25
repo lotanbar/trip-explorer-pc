@@ -1,5 +1,5 @@
 /**
- * Overpass access shared by OSM POIs, trails and track cleanup, copied from the reference app:
+ * Overpass access shared by OSM POIs, trails and track cleanup:
  * three endpoints with a cooldown on 429/5xx, fetching only the strips of the viewport not fetched
  * yet, and a 30-day on-disk cache (kept by the backend).
  */
