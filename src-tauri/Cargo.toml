@@ -1,6 +1,6 @@
 [package]
 name = "trip-explorer-pc"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -35,8 +35,9 @@ trash = "5"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
-codegen-units = 1
-lto = true
+# Thin LTO over the default 16 codegen units: the optimizing link runs on all cores (fat LTO with one
+# unit took minutes on one core for every release build, for a barely smaller binary).
+lto = "thin"
 opt-level = 3
 panic = "abort"
 strip = true
