@@ -9,7 +9,7 @@ import { listen } from '@tauri-apps/api/event';
 import { browserPage, closeBrowser, onBrowserChange, openInBrowser } from './browser';
 import { closePanel, initPanel } from './panel';
 import { installMapGestures } from './gestures';
-import type { FeatureCollection, Point } from 'geojson';
+import type { Feature, FeatureCollection, Point } from 'geojson';
 import { scanTrips, cacheEvict, driveSetRoot, driveStatus, driveSync, listPlans, readText, writeText, CACHE_TTL_MS, type SyncStatus, type TripInfo } from './backend';
 import { ask } from './dialog';
 import { openDriveSetup } from './drivePicker';
@@ -18,7 +18,7 @@ import { addMarkerImages, addOverlayLayers, LAYERS, lastData, setData, SRC_MY_PO
 import { loadMapStyle, placeLabelLayerIds } from './mapStyle';
 import { osmPoiStore, osmPoisGeoJson, OSM_POI_MIN_ZOOM } from './osmPois';
 import { atLeastKm, expanded, type Bounds } from './overpass';
-import { forgetRecordings, loadRecording, recordingFeature, tripColor } from './recordings';
+import { forgetRecordings, loadRecording, recordingFeature, tripColor, TRACK_CACHE } from './recordings';
 import { ScreenHistory, type Screen } from './screens';
 import { loadSettings, saveSettings, settings } from './settings';
 import { Sidebar } from './sidebar';
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
     sidebar.setStatus([...statusMessages.values()].join(' · ') || null);
   };
 
-  for (const ns of ['osm-pois-v7', 'trails-v2', 'roads']) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
+  for (const ns of ['osm-pois-v7', 'trails-v2', 'roads', TRACK_CACHE]) cacheEvict(ns, CACHE_TTL_MS).catch(() => undefined);
 
   let style;
   try {
@@ -297,14 +297,24 @@ async function main(): Promise<void> {
     renderPlans();
 
     const wanted = trips.flatMap((trip) => trip.recordings.filter((r) => checked.has(r.path)).map((r) => ({ r, trip })));
-    const recordingsData: FeatureCollection = { type: 'FeatureCollection', features: [] };
-    setData(map, SRC_RECORDINGS, recordingsData);
+    // Each recording shows at once as its raw points; the cleaned line replaces them when its roads are in.
+    const lines = new Map<string, Feature>();
+    const drawLines = () => setData(map, SRC_RECORDINGS, { type: 'FeatureCollection', features: [...lines.values()] });
+    drawLines();
     for (const { r, trip } of wanted) {
-      loadRecording(r, trip, (s) => setStatus(`rec:${r.path}`, s))
-        .then((loaded) => {
+      const load = loadRecording(r, trip, (s) => setStatus(`rec:${r.path}`, s));
+      load.raw
+        .then((raw) => {
+          if (gen !== checkedGeneration || lines.has(r.path)) return;
+          lines.set(r.path, recordingFeature(raw));
+          drawLines();
+        })
+        .catch(() => undefined);
+      load.cleaned
+        .then((cleaned) => {
           if (gen !== checkedGeneration) return;
-          recordingsData.features.push(recordingFeature(loaded));
-          setData(map, SRC_RECORDINGS, recordingsData);
+          lines.set(r.path, recordingFeature(cleaned));
+          drawLines();
         })
         .catch((e) => setStatus(`rec:${r.path}`, `${r.name}: ${(e as Error).message}`));
     }

@@ -15,6 +15,18 @@ import type { OsmWay } from './track-cleanup/src/roadGraph';
 /** Roads for track cleanup share the 30-day on-disk cache; one entry per ~1 km tile. */
 const ROAD_REQUEST_TIMEOUT_MS = 90_000;
 
+/**
+ * Cleaned tracks, in the same on-disk cache on this PC (never in the trips folder), keyed by the
+ * SHA-256 of the GPX text: a file is cleaned again only when its content changes (a rename keeps it).
+ * Bump the version when the cleanup changes, so old results are not reused.
+ */
+export const TRACK_CACHE = 'tracks-v1';
+
+async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 const roadCache: RoadCache = {
   async get(tileKey) {
     try {
@@ -36,19 +48,40 @@ export interface LoadedRecording {
   segments: [number, number][][];
   /** True when the roads could not be fetched and the raw points are shown instead. */
   raw: boolean;
+  /** True for the raw points drawn while the cleanup still runs. */
+  cleaning: boolean;
   pointCount: number;
 }
 
-const loaded = new Map<string, Promise<LoadedRecording>>();
+/** A recording on its way: the raw points (drawn at once), then the cleaned line that replaces them. */
+export interface RecordingLoad {
+  raw: Promise<LoadedRecording>;
+  cleaned: Promise<LoadedRecording>;
+}
 
-export function loadRecording(info: RecordingInfo, trip: TripInfo, onStatus: (s: string | null) => void): Promise<LoadedRecording> {
-  let p = loaded.get(info.path);
-  if (!p) {
-    p = load(info, trip, onStatus);
-    loaded.set(info.path, p);
-    p.catch(() => loaded.delete(info.path));
+const loaded = new Map<string, RecordingLoad>();
+
+export function loadRecording(info: RecordingInfo, trip: TripInfo, onStatus: (s: string | null) => void): RecordingLoad {
+  let l = loaded.get(info.path);
+  if (!l) {
+    const xml = readText(info.path);
+    const raw = xml.then((text): LoadedRecording => {
+      const segments = parseGpx(text);
+      return {
+        info,
+        trip,
+        segments: segments.map((seg) => seg.map((p) => [p.lon, p.lat] as [number, number])),
+        raw: true,
+        cleaning: true,
+        pointCount: segments.reduce((n, s) => n + s.length, 0),
+      };
+    });
+    const cleaned = xml.then((text) => load(info, trip, text, onStatus));
+    l = { raw, cleaned };
+    loaded.set(info.path, l);
+    cleaned.catch(() => loaded.delete(info.path));
   }
-  return p;
+  return l;
 }
 
 /** Forgets every cleaned track so a Refresh re-reads the files. */
@@ -56,11 +89,19 @@ export function forgetRecordings(): void {
   loaded.clear();
 }
 
-async function load(info: RecordingInfo, trip: TripInfo, onStatus: (s: string | null) => void): Promise<LoadedRecording> {
-  const xml = await readText(info.path);
+async function load(info: RecordingInfo, trip: TripInfo, xml: string, onStatus: (s: string | null) => void): Promise<LoadedRecording> {
+  // An incomplete recording is still growing: cleaned each time, not cached.
+  const key = info.incomplete ? null : await sha256(xml);
+  if (key) {
+    const hit = await cacheGet(TRACK_CACHE, key, CACHE_TTL_MS).catch(() => null);
+    if (hit) {
+      const saved = JSON.parse(hit) as { segments: [number, number][][]; pointCount: number };
+      return { info, trip, segments: saved.segments, raw: false, cleaning: false, pointCount: saved.pointCount };
+    }
+  }
   const segments = parseGpx(xml);
   const pointCount = segments.reduce((n, s) => n + s.length, 0);
-  if (pointCount === 0) return { info, trip, segments: [], raw: true, pointCount };
+  if (pointCount === 0) return { info, trip, segments: [], raw: true, cleaning: false, pointCount };
 
   try {
     onStatus(`Cleaning ${info.name}…`);
@@ -74,13 +115,12 @@ async function load(info: RecordingInfo, trip: TripInfo, onStatus: (s: string | 
     });
     const cleaned = cleanTrack(segments, roads);
     onStatus(null);
-    return {
-      info,
-      trip,
-      segments: cleaned.map((seg) => seg.map((p) => [p.lon, p.lat] as [number, number])),
-      raw: false,
-      pointCount,
-    };
+    const lines = cleaned.map((seg) => seg.map((p) => [p.lon, p.lat] as [number, number]));
+    if (key) {
+      const meta = JSON.stringify({ fetchedAt: Date.now(), file: info.name });
+      await cachePut(TRACK_CACHE, key, meta, JSON.stringify({ segments: lines, pointCount })).catch(() => undefined);
+    }
+    return { info, trip, segments: lines, raw: false, cleaning: false, pointCount };
   } catch (e) {
     console.warn(`Track cleanup unavailable for ${info.name}; showing raw points`, e);
     onStatus(`Roads unavailable, showing ${info.name} raw`);
@@ -89,6 +129,7 @@ async function load(info: RecordingInfo, trip: TripInfo, onStatus: (s: string | 
       trip,
       segments: segments.map((seg) => seg.map((p) => [p.lon, p.lat] as [number, number])),
       raw: true,
+      cleaning: false,
       pointCount,
     };
   }
@@ -127,7 +168,7 @@ export function recordingFeature(rec: LoadedRecording): Feature<MultiLineString>
       id: rec.info.path,
       color: tripColor(rec.trip.name),
       incomplete: rec.info.incomplete,
-      hover: `${recordingDateRange(rec.info.name)}\n${rec.trip.name}${rec.raw ? '\n(raw, roads unavailable)' : ''}`,
+      hover: `${recordingDateRange(rec.info.name)}\n${rec.trip.name}${rec.cleaning ? '\n(raw, cleaning…)' : rec.raw ? '\n(raw, roads unavailable)' : ''}`,
     },
   };
 }
