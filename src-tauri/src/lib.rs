@@ -31,6 +31,13 @@ struct Poi {
     media: Vec<String>,
 }
 
+/// An audio file in the trip's general_recordings/ folder (audio that belongs to no POI).
+#[derive(Serialize)]
+struct Voice {
+    name: String,
+    path: String,
+}
+
 #[derive(Serialize)]
 struct Trip {
     name: String,
@@ -38,6 +45,20 @@ struct Trip {
     recordings_path: String,
     recordings: Vec<Recording>,
     pois: Vec<Poi>,
+    voice: Vec<Voice>,
+}
+
+const GENERAL_RECORDINGS_FOLDER: &str = "general_recordings";
+const AUDIO_EXTENSIONS: [&str; 6] = ["m4a", "aac", "mp3", "ogg", "wav", "opus"];
+
+/// "DD.MM.YYYY HH-MM-SS…" as "YYYYMMDDHHMMSS", so names sort by time; None for other names.
+fn voice_sort_key(name: &str) -> Option<String> {
+    let b = name.as_bytes();
+    if b.len() < 19 || !name.is_char_boundary(19) {
+        return None;
+    }
+    let digits = |r: std::ops::Range<usize>| name[r.clone()].bytes().all(|c| c.is_ascii_digit()).then(|| name[r].to_string());
+    Some(format!("{}{}{}{}{}{}", digits(6..10)?, digits(3..5)?, digits(0..2)?, digits(11..13)?, digits(14..16)?, digits(17..19)?))
 }
 
 fn read_trimmed(path: &Path) -> String {
@@ -107,7 +128,7 @@ fn scan_trip(dir: &Path) -> Trip {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() || entry.file_name() == "recordings" {
+            if !path.is_dir() || entry.file_name() == "recordings" || entry.file_name() == GENERAL_RECORDINGS_FOLDER {
                 continue;
             }
             if let Some(poi) = scan_poi(&path) {
@@ -115,6 +136,18 @@ fn scan_trip(dir: &Path) -> Trip {
             }
         }
     }
+    let mut voice = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir.join(GENERAL_RECORDINGS_FOLDER)) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if path.is_file() && AUDIO_EXTENSIONS.contains(&ext.as_str()) {
+                voice.push(Voice { name: entry.file_name().to_string_lossy().to_string(), path: path.to_string_lossy().to_string() });
+            }
+        }
+    }
+    // Newest first, like the phone's list.
+    voice.sort_by(|a, b| voice_sort_key(&b.name).cmp(&voice_sort_key(&a.name)).then_with(|| b.name.cmp(&a.name)));
     recordings.sort_by(|a, b| a.name.cmp(&b.name));
     pois.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Trip {
@@ -123,6 +156,7 @@ fn scan_trip(dir: &Path) -> Trip {
         recordings_path: recordings_dir.to_string_lossy().to_string(),
         recordings,
         pois,
+        voice,
     }
 }
 
@@ -198,6 +232,12 @@ fn save_plan_file(root: &str, name: &str, text: &str, overwrite: bool) -> Result
 #[tauri::command]
 fn read_text(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("{}: {}", path, e))
+}
+
+/// A file's bytes, sent raw (not as JSON): audio for the side panel's player.
+#[tauri::command]
+fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    fs::read(&path).map(tauri::ipc::Response::new).map_err(|e| format!("{}: {}", path, e))
 }
 
 /// Writes a file the user picked in a save dialog (GPX export), through a temp file next to it.
@@ -737,6 +777,7 @@ pub fn run() {
             list_plans,
             save_plan,
             read_text,
+            read_bytes,
             write_text,
             load_settings,
             save_settings,

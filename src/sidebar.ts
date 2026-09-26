@@ -6,7 +6,7 @@
  */
 
 import { open } from '@tauri-apps/plugin-dialog';
-import type { SyncStatus, TripInfo } from './backend';
+import { readBytes, type SyncStatus, type TripInfo } from './backend';
 import { GROUPS, groupForFile, groupById, NO_GROUP } from './groups';
 import { planStopKey, type SavedPlan } from './plan';
 import { iconSvg } from './icons';
@@ -40,6 +40,8 @@ export class Sidebar {
   private planBoxes: HTMLInputElement[] = [];
   /** Plans whose stops are listed (by file); the rest show as one row. Not remembered. */
   private readonly expanded = new Set<string>();
+  /** The open general-recording player, if any. */
+  private voicePlayer: { path: string; url: string; audio: HTMLAudioElement; play: HTMLElement } | null = null;
 
   constructor(private readonly root: HTMLElement, private readonly cb: SidebarCallbacks) {
     root.innerHTML = `
@@ -160,6 +162,7 @@ export class Sidebar {
   // ── Folder tree ──
 
   setTrips(trips: TripInfo[]): void {
+    this.closeVoice();
     this.trips = trips;
     this.checkboxes = [];
     this.treeEl.innerHTML = '';
@@ -187,6 +190,7 @@ export class Sidebar {
         recNode.appendChild(recChildren);
         children.appendChild(recNode);
       }
+      if (trip.voice.length > 0) children.appendChild(this.voiceFolder(trip));
       for (const poi of trip.pois) {
         const group = groupForFile(poi.group);
         const icon = `<span class="poi-icon" style="background:${group.color}">${iconSvg(group.icon) ?? ''}</span>`;
@@ -196,6 +200,83 @@ export class Sidebar {
       this.treeEl.appendChild(tripNode);
     }
     this.syncParents();
+  }
+
+  /**
+   * general_recordings: audio of the trip that belongs to no POI. Not on the map, so no checkboxes:
+   * the arrow shows the files, and a file's play button opens a player under it.
+   */
+  private voiceFolder(trip: TripInfo): HTMLElement {
+    const key = `${trip.path}/general_recordings`;
+    const el = document.createElement('div');
+    el.className = 'node node-folder node-voice-folder';
+    const row = document.createElement('div');
+    row.className = 'row';
+    const caret = document.createElement('span');
+    caret.className = 'caret';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = `general_recordings (${trip.voice.length})`;
+    row.append(caret, name);
+    const children = document.createElement('div');
+    children.className = 'children';
+    children.hidden = !this.expanded.has(key);
+    caret.textContent = children.hidden ? '▸' : '▾';
+    row.addEventListener('click', () => {
+      children.hidden = !children.hidden;
+      caret.textContent = children.hidden ? '▸' : '▾';
+      children.hidden ? this.expanded.delete(key) : this.expanded.add(key);
+    });
+    for (const voice of trip.voice) {
+      const item = document.createElement('div');
+      item.className = 'node node-voice';
+      const r = document.createElement('div');
+      r.className = 'row';
+      r.title = voice.path;
+      const play = document.createElement('span');
+      play.className = 'voice-play';
+      play.textContent = '▶';
+      const label = document.createElement('span');
+      label.className = 'name';
+      label.textContent = voice.name.replace(/\.[^.]+$/, '');
+      r.append(play, label);
+      r.addEventListener('click', () => void this.toggleVoice(item, voice.path, play));
+      item.appendChild(r);
+      children.appendChild(item);
+    }
+    el.append(row, children);
+    return el;
+  }
+
+  /** One player at a time: opens under the clicked file and plays it; a second click closes it. */
+  private async toggleVoice(item: HTMLElement, path: string, play: HTMLElement): Promise<void> {
+    const open = this.voicePlayer;
+    this.closeVoice();
+    if (open?.path === path) return;
+    try {
+      const bytes = await readBytes(path);
+      const url = URL.createObjectURL(new Blob([bytes], { type: path.toLowerCase().endsWith('.opus') || path.toLowerCase().endsWith('.ogg') ? 'audio/ogg' : '' }));
+      const audio = document.createElement('audio');
+      audio.className = 'voice-audio';
+      audio.controls = true;
+      audio.src = url;
+      item.appendChild(audio);
+      play.textContent = '■';
+      this.voicePlayer = { path, url, audio, play };
+      await audio.play().catch(() => {});
+    } catch (e) {
+      console.error('Could not open the recording', path, e);
+    }
+  }
+
+  private closeVoice(): void {
+    const p = this.voicePlayer;
+    if (!p) return;
+    p.audio.pause();
+    p.audio.remove();
+    URL.revokeObjectURL(p.url);
+    p.play.textContent = '▶';
+    this.voicePlayer = null;
   }
 
   // ── Plans ──

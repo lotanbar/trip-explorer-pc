@@ -276,6 +276,26 @@ button:hover {
   color: var(--muted);
 }
 
+/* general_recordings: a play button per file, one audio player at a time under the file. */
+.voice-play {
+  flex: none;
+  width: 14px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.node-voice > .row:hover .voice-play {
+  color: var(--text);
+}
+
+.voice-audio {
+  display: block;
+  width: calc(100% - 8px);
+  height: 32px;
+  margin: 2px 4px 4px;
+}
+
 .badge {
   font-size: 10px;
   padding: 0 5px;

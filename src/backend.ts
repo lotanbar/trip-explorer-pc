@@ -19,16 +19,24 @@ export interface PoiInfo {
   media: string[];
 }
 
+/** An audio file in the trip's general_recordings/ folder. */
+export interface VoiceInfo {
+  name: string;
+  path: string;
+}
+
 export interface TripInfo {
   name: string;
   path: string;
   recordings_path: string;
   recordings: RecordingInfo[];
   pois: PoiInfo[];
+  voice: VoiceInfo[];
 }
 
 export const scanTrips = (root: string) => invoke<TripInfo[]>('scan_trips', { root });
 export const readText = (path: string) => invoke<string>('read_text', { path });
+export const readBytes = (path: string) => invoke<ArrayBuffer>('read_bytes', { path });
 /** Writes a file the user picked (GPX export). */
 export const writeText = (path: string, text: string) => invoke<void>('write_text', { path, text });
 
