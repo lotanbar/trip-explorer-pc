@@ -16,6 +16,7 @@
         "title": "Trip Explorer",
         "width": 1400,
         "height": 900,
+        "maximized": true,
         "minWidth": 360,
         "minHeight": 400,
         "zoomHotkeysEnabled": true
