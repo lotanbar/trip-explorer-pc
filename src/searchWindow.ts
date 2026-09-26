@@ -103,6 +103,7 @@ export class SearchWindow {
         </div>
       </div>
       <div id="search-bar" class="search-bar">
+        <button id="panel-nav" class="icon-button"></button>
         <input id="search-input" type="search" placeholder="Search places…" autocomplete="off" spellcheck="false">
         <div class="plans-menu-wrap">
           <button id="plans-button" title="New plan, the current plan or a saved one">Plans ▴</button>

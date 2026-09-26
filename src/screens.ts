@@ -43,6 +43,11 @@ export class ScreenHistory {
     if (!this.restoring) this.cursor = pushScreen(this.list, this.cursor, screen);
   }
 
+  /** Whether there is a screen to step to (-1 = back, +1 = forward). */
+  canStep(delta: number): boolean {
+    return stepCursor(this.list.length, this.cursor, delta) !== this.cursor;
+  }
+
   /**
    * Steps back (-1) or forward (+1) and hands the screen to `show`. The cursor moves only when
    * `show` succeeds (it can be refused, e.g. when leaving a plan with unsaved edits is cancelled).

@@ -33,16 +33,17 @@ import './styles.css';
 const DEFAULT_CENTER: [number, number] = [25.0, 37.3];
 const DEFAULT_ZOOM = 7;
 
+const navSvg = (body: string) =>
+  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+const ICON_BACK = navSvg('<path d="M19 12H5M11 6l-6 6 6 6"/>');
+const ICON_CLOSE = navSvg('<path d="M6 6l12 12M18 6L6 18"/>');
+
 async function main(): Promise<void> {
   setWorkerUrl(maplibreWorkerUrl);
   await loadSettings();
   const statusMessages = new Map<string, string>();
   initPanel();
   const sidebar = new Sidebar(document.getElementById('sidebar')!, {
-    onClose: () => {
-      closeBrowser().catch(() => undefined);
-      closePanel();
-    },
     onRootChanged: (root) => {
       void driveSetRoot(root);
       void rescan();
@@ -115,7 +116,21 @@ async function main(): Promise<void> {
   /** The panel may show another screen now: recorded once the change has settled (a browser closing as the window opens is one step). */
   const noteScreen = () => {
     window.clearTimeout(noteTimer);
-    noteTimer = window.setTimeout(() => screens.record(currentScreen()), 0);
+    noteTimer = window.setTimeout(() => {
+      screens.record(currentScreen());
+      updateNav();
+    }, 0);
+  };
+
+  // The button left of the search bar: on the controls an × that closes the panel; on any other
+  // screen a back arrow (a step back in the history, as Alt+Left; back to the controls when there is none).
+  const navButton = () => document.getElementById('panel-nav')!;
+  const updateNav = () => {
+    const back = currentScreen().kind !== 'controls';
+    const nav = navButton();
+    nav.innerHTML = back ? ICON_BACK : ICON_CLOSE;
+    nav.title = back ? 'Back' : 'Close the panel';
+    nav.setAttribute('aria-label', nav.title);
   };
   onBrowserChange(noteScreen);
 
@@ -172,6 +187,15 @@ async function main(): Promise<void> {
     setStatus: (m) => setStatus('search', m),
   });
 
+  navButton().addEventListener('click', () => {
+    const report = (err: unknown) => setStatus('open', `Could not open: ${err}`);
+    if (currentScreen().kind === 'controls') {
+      closePanel();
+      return;
+    }
+    if (screens.canStep(-1)) screens.step(-1, showScreen).catch(report);
+    else showScreen({ kind: 'controls' }).catch(report);
+  });
   noteScreen();
 
   // ── Trips, plans and the checked items ──
