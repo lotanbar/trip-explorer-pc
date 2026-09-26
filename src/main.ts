@@ -385,17 +385,8 @@ async function main(): Promise<void> {
     );
     const top = features[0];
     const report = (err: unknown) => setStatus('open', `Could not open: ${err}`);
-    if (!top) {
-      // An empty spot on the map: back to the panel's controls (the browser and the search window go);
-      // when the controls are already showing, the panel closes.
-      if (!browserPage() && !search.isOpen) {
-        closePanel();
-        return;
-      }
-      closeBrowser().catch(report);
-      void search.requestClose();
-      return;
-    }
+    // An empty spot on the map does nothing.
+    if (!top) return;
     const props = top.properties ?? {};
     switch (top.layer.id) {
       case LAYERS.myPois:
