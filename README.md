@@ -34,6 +34,7 @@ Needs Node, Rust (MSVC toolchain on Windows) and the WebView2 runtime (Windows) 
 Deviations from the spec (agreed on 2026-09-22):
 
 - Only named OSM POIs are fetched, and places of worship / cemeteries additionally need a notable tag (`wikidata`, `wikipedia`, `heritage`, `website`, `image`, `wikimedia_commons`, `description` or `name:en`); every countryside chapel is tagged and they swamped the map.
+- A name that is only the object's type, in any language ("Source" / "Πηγή" on a spring), counts as no name. The type names come from OSM's translated presets (`@openstreetmap/id-tagging-schema`); `node scripts/generic-names.mjs` rebuilds `src/genericNames.json` after the package is updated.
 - Clicking an OSM POI or a trail opens the search / website in an embedded browser laid over the side panel
   (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
   empty spot on the map brings the panel's controls back (the browser and the search window both go).

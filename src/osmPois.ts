@@ -4,6 +4,7 @@
 
 import type { FeatureCollection, Point } from 'geojson';
 import { displayName, groupForOsmTags, isTrailObject, localName, type Tags } from './groups';
+import { hasGenericName } from './genericName';
 import { StripStore } from './overpass';
 
 export interface OsmPoi {
@@ -82,11 +83,12 @@ function needsNotableTag(tags: Tags): boolean {
 }
 
 /**
- * Named objects are shown; places of worship and cemeteries also need a notable tag. The query
- * already asks Overpass for exactly that; this guards data from older caches.
+ * Named objects are shown; places of worship and cemeteries also need a notable tag (the query
+ * already asks Overpass for exactly that; this guards data from older caches). A name that is only
+ * the object's type ("Source" on a spring) counts as no name.
  */
 export function isShown(poi: OsmPoi): boolean {
-  if (poi.name === null) return false;
+  if (poi.name === null || hasGenericName(poi.tags)) return false;
   return !needsNotableTag(poi.tags) || NOTABLE_TAGS.some((t) => !!poi.tags[t]);
 }
 
