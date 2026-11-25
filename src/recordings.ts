@@ -6,11 +6,17 @@
 import type { Feature, MultiLineString } from 'geojson';
 import { readText, CACHE_TTL_MS, cacheGet, cachePut } from './backend';
 import type { RecordingInfo, TripInfo } from './backend';
-import { OVERPASS_ENDPOINTS } from './overpass';
 import { parseGpx } from './track-cleanup/src/gpx';
 import { cleanTrack } from './track-cleanup/src/pipeline';
 import { fetchRoadsForTrack, type RoadCache } from './track-cleanup/src/overpass';
 import type { OsmWay } from './track-cleanup/src/roadGraph';
+
+/** Overpass servers for the roads, tried in turn (the cleanup module cools a failing one down). */
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
 
 /** Roads for track cleanup share the 30-day on-disk cache; one entry per ~1 km tile. */
 const ROAD_REQUEST_TIMEOUT_MS = 90_000;
@@ -149,7 +155,7 @@ export function recordingDateRange(name: string): string {
   return endDate ? `${start} – ${endDate} ${h2}:${m2}` : `${start} – ${h2}:${m2}`;
 }
 
-/** One colour per trip, derived from its name; saturated so it can never be the trail grey. */
+/** One colour per trip, derived from its name; saturated, so it never looks like the None grey. */
 export function tripColor(tripName: string): string {
   let hash = 2166136261;
   for (const ch of tripName) {

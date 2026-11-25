@@ -1,7 +1,7 @@
 /**
- * Bundled SVG icons (Maki, Temaki or hand-drawn) and the marker / line-pattern images built from
- * them for MapLibre. Markers are a pin: round head, pointed tail, group color
- * fill, white icon, thin white outline. My POIs have a squircle head, OSM POIs a round one.
+ * Bundled SVG icons (Maki or hand-drawn, the same shapes as the phone's) and the marker images built
+ * from them for MapLibre. A marker is a pin: squircle head, pointed tail, category color fill,
+ * white icon, thin white outline.
  */
 
 const svgFiles = import.meta.glob('./icons/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -23,9 +23,6 @@ export const MARKER_WIDTH = 30;
 export const MARKER_HEIGHT = 39;
 
 export const POI_OUTLINE = '#FFFFFF';
-export const TRAIL_COLOR = '#BDBDBD';
-/** Icons along trail lines are brighter than the line so they stand out. */
-export const TRAIL_ICON_COLOR = '#E0E0E0';
 
 function svgToImage(svg: string, fill: string): Promise<HTMLImageElement> {
   const styled = svg.replace(
@@ -45,13 +42,8 @@ export interface MarkerImage {
   pixelRatio: number;
 }
 
-export type MarkerShape = 'circle' | 'squircle';
-
-/**
- * A pin in `color` with `icon` (white) in the head, or a white dot for the "marker" icon.
- * My POIs get a squircle head, OSM POIs a round one; everything else is identical.
- */
-export async function buildMarker(icon: string, color: string, outline: string, shape: MarkerShape = 'circle'): Promise<MarkerImage> {
+/** A pin in `color` with `icon` (white) in the head, or a white dot for the "marker" icon. */
+export async function buildMarker(icon: string, color: string, outline: string): Promise<MarkerImage> {
   const w = MARKER_WIDTH * PIXEL_RATIO;
   const h = MARKER_HEIGHT * PIXEL_RATIO;
   const canvas = document.createElement('canvas');
@@ -79,23 +71,19 @@ export async function buildMarker(icon: string, color: string, outline: string, 
   const cy = w / 2;
   const r = w / 2 - stroke;
   ctx.beginPath();
-  if (shape === 'squircle') {
-    // Superellipse |x|^n + |y|^n = r^n with n = 4: rounder than a rounded square, squarer than a circle.
-    const n = 4;
-    const steps = 96;
-    for (let i = 0; i <= steps; i++) {
-      const t = (i / steps) * Math.PI * 2;
-      const c = Math.cos(t);
-      const sn = Math.sin(t);
-      const x = cx + Math.sign(c) * Math.pow(Math.abs(c), 2 / n) * r;
-      const y = cy + Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-  } else {
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  // Superellipse |x|^n + |y|^n = r^n with n = 4: rounder than a rounded square, squarer than a circle.
+  const n = 4;
+  const steps = 96;
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * Math.PI * 2;
+    const c = Math.cos(t);
+    const sn = Math.sin(t);
+    const x = cx + Math.sign(c) * Math.pow(Math.abs(c), 2 / n) * r;
+    const y = cy + Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
   }
+  ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
@@ -111,26 +99,6 @@ export async function buildMarker(icon: string, color: string, outline: string, 
     ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
   }
   return { data: ctx.getImageData(0, 0, w, h), pixelRatio: PIXEL_RATIO };
-}
-
-/** A small grey icon placed along trail lines. */
-export async function buildLineIcon(icon: string, cssSize = 16): Promise<MarkerImage> {
-  const s = cssSize * PIXEL_RATIO;
-  const canvas = document.createElement('canvas');
-  canvas.width = s;
-  canvas.height = s;
-  const ctx = canvas.getContext('2d')!;
-  const svg = iconSvg(icon);
-  if (svg) {
-    // Dark halo so the icon reads over the map, then the icon itself.
-    const halo = await svgToImage(svg, '#000000');
-    ctx.globalAlpha = 0.6;
-    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.drawImage(halo, dx * PIXEL_RATIO, dy * PIXEL_RATIO, s, s);
-    ctx.globalAlpha = 1;
-    const img = await svgToImage(svg, TRAIL_ICON_COLOR);
-    ctx.drawImage(img, 0, 0, s, s);
-  }
-  return { data: ctx.getImageData(0, 0, s, s), pixelRatio: PIXEL_RATIO };
 }
 
 function withAlpha(hex: string, alpha: number): string {

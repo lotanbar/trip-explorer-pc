@@ -1,6 +1,6 @@
-//! Trip Explorer PC backend: reads the trips folder tree, persists settings and keeps the
-//! on-disk Overpass cache, and writes plan files into `trips/plans/`. The trips folder is kept in
-//! sync with a Google Drive folder (see `sync`); that is the only code that removes anything in it.
+//! Trip Explorer PC backend: reads the trips folder tree, persists settings and keeps the on-disk
+//! cache (roads and cleaned tracks). It writes nothing into the trips folder itself; the folder is
+//! kept in sync with a Google Drive folder (see `sync`), the only code that changes anything in it.
 
 mod drive;
 mod sync;
@@ -8,9 +8,9 @@ mod sync;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::{Arc, Mutex};
-use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl, WindowEvent};
+use std::time::SystemTime;
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize)]
 struct Recording {
@@ -19,23 +19,17 @@ struct Recording {
     incomplete: bool,
 }
 
+/// A POI folder: one with a data.txt (see the spec's trips folder).
 #[derive(Serialize)]
 struct Poi {
+    /// The folder name: DD.MM.YYYY HH-MM-SS.
     name: String,
     path: String,
     lat: f64,
     lon: f64,
     datetime: String,
-    description: String,
-    group: Option<String>,
-    media: Vec<String>,
-}
-
-/// An audio file in the trip's general_recordings/ folder (audio that belongs to no POI).
-#[derive(Serialize)]
-struct Voice {
-    name: String,
-    path: String,
+    /// The category key as written in data.txt; None when the line is missing.
+    category: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -45,24 +39,6 @@ struct Trip {
     recordings_path: String,
     recordings: Vec<Recording>,
     pois: Vec<Poi>,
-    voice: Vec<Voice>,
-}
-
-const GENERAL_RECORDINGS_FOLDER: &str = "general_recordings";
-const AUDIO_EXTENSIONS: [&str; 6] = ["m4a", "aac", "mp3", "ogg", "wav", "opus"];
-
-/// "DD.MM.YYYY HH-MM-SS…" as "YYYYMMDDHHMMSS", so names sort by time; None for other names.
-fn voice_sort_key(name: &str) -> Option<String> {
-    let b = name.as_bytes();
-    if b.len() < 19 || !name.is_char_boundary(19) {
-        return None;
-    }
-    let digits = |r: std::ops::Range<usize>| name[r.clone()].bytes().all(|c| c.is_ascii_digit()).then(|| name[r].to_string());
-    Some(format!("{}{}{}{}{}{}", digits(6..10)?, digits(3..5)?, digits(0..2)?, digits(11..13)?, digits(14..16)?, digits(17..19)?))
-}
-
-fn read_trimmed(path: &Path) -> String {
-    fs::read_to_string(path).map(|s| s.trim().to_string()).unwrap_or_default()
 }
 
 fn parse_coordinates(text: &str) -> Option<(f64, f64)> {
@@ -76,38 +52,25 @@ fn parse_coordinates(text: &str) -> Option<(f64, f64)> {
     }
 }
 
+/// data.txt: one `key: value` per line; keys are lower case, unknown keys and blank lines are ignored.
+fn parse_data(text: &str) -> std::collections::HashMap<String, String> {
+    text.lines()
+        .filter_map(|line| line.split_once(':'))
+        .map(|(k, v)| (k.trim().to_lowercase(), v.trim().to_string()))
+        .collect()
+}
+
+/// A folder is a POI when it holds a data.txt with valid coordinates; any other folder is skipped.
 fn scan_poi(dir: &Path) -> Option<Poi> {
-    let coords = read_trimmed(&dir.join("coordinates.txt"));
-    let (lat, lon) = parse_coordinates(&coords)?;
-    let mut group = None;
-    let mut media = Vec::new();
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if let Some(rest) = name.strip_prefix("group-") {
-                if let Some(g) = rest.strip_suffix(".txt") {
-                    group = Some(g.to_string());
-                }
-            }
-        }
-    }
-    if let Ok(entries) = fs::read_dir(dir.join("media")) {
-        for entry in entries.flatten() {
-            if entry.path().is_file() {
-                media.push(entry.file_name().to_string_lossy().to_string());
-            }
-        }
-    }
-    media.sort();
+    let data = parse_data(&fs::read_to_string(dir.join("data.txt")).ok()?);
+    let (lat, lon) = parse_coordinates(data.get("coordinates")?)?;
     Some(Poi {
         name: dir.file_name()?.to_string_lossy().to_string(),
         path: dir.to_string_lossy().to_string(),
         lat,
         lon,
-        datetime: read_trimmed(&dir.join("datetime.txt")),
-        description: read_trimmed(&dir.join("description.txt")),
-        group,
-        media,
+        datetime: data.get("datetime").cloned().unwrap_or_default(),
+        category: data.get("category").filter(|c| !c.is_empty()).cloned(),
     })
 }
 
@@ -128,7 +91,7 @@ fn scan_trip(dir: &Path) -> Trip {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() || entry.file_name() == "recordings" || entry.file_name() == GENERAL_RECORDINGS_FOLDER {
+            if !path.is_dir() || entry.file_name() == "recordings" {
                 continue;
             }
             if let Some(poi) = scan_poi(&path) {
@@ -136,18 +99,6 @@ fn scan_trip(dir: &Path) -> Trip {
             }
         }
     }
-    let mut voice = Vec::new();
-    if let Ok(entries) = fs::read_dir(dir.join(GENERAL_RECORDINGS_FOLDER)) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-            if path.is_file() && AUDIO_EXTENSIONS.contains(&ext.as_str()) {
-                voice.push(Voice { name: entry.file_name().to_string_lossy().to_string(), path: path.to_string_lossy().to_string() });
-            }
-        }
-    }
-    // Newest first, like the phone's list.
-    voice.sort_by(|a, b| voice_sort_key(&b.name).cmp(&voice_sort_key(&a.name)).then_with(|| b.name.cmp(&a.name)));
     recordings.sort_by(|a, b| a.name.cmp(&b.name));
     pois.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Trip {
@@ -156,7 +107,6 @@ fn scan_trip(dir: &Path) -> Trip {
         recordings_path: recordings_dir.to_string_lossy().to_string(),
         recordings,
         pois,
-        voice,
     }
 }
 
@@ -170,7 +120,7 @@ fn scan_trips(root: String) -> Result<Vec<Trip>, String> {
     let mut trips = Vec::new();
     for entry in fs::read_dir(&root).map_err(|e| e.to_string())?.flatten() {
         let path = entry.path();
-        if path.is_dir() && !entry.file_name().eq_ignore_ascii_case(PLANS_FOLDER) {
+        if path.is_dir() {
             trips.push(scan_trip(&path));
         }
     }
@@ -178,79 +128,10 @@ fn scan_trips(root: String) -> Result<Vec<Trip>, String> {
     Ok(trips)
 }
 
-/// The folder inside `trips/` that holds plan files; it is not a trip.
-const PLANS_FOLDER: &str = "plans";
-
-#[derive(Serialize)]
-struct PlanFile {
-    name: String,
-    path: String,
-}
-
-fn plans_dir(root: &str) -> PathBuf {
-    PathBuf::from(root).join(PLANS_FOLDER)
-}
-
-/// Every `.txt` file in `trips/plans/`, by name (case-insensitive). No folder → no plans.
-#[tauri::command]
-fn list_plans(root: String) -> Result<Vec<PlanFile>, String> {
-    let mut plans = Vec::new();
-    if let Ok(entries) = fs::read_dir(plans_dir(&root)) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let file = entry.file_name().to_string_lossy().to_string();
-            if path.is_file() && file.to_lowercase().ends_with(".txt") {
-                plans.push(PlanFile { name: file[..file.len() - 4].to_string(), path: path.to_string_lossy().to_string() });
-            }
-        }
-    }
-    plans.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    Ok(plans)
-}
-
-/// Writes `trips/plans/<name>.txt` (creating `plans/` if needed). An existing file is refused
-/// unless `overwrite` is set (the plan was loaded from that very file). Returns the file's path.
-#[tauri::command]
-fn save_plan(sync: tauri::State<'_, Arc<sync::SyncHandle>>, root: String, name: String, text: String, overwrite: bool) -> Result<String, String> {
-    let _ = sync;
-    save_plan_file(&root, &name, &text, overwrite)
-}
-
-fn save_plan_file(root: &str, name: &str, text: &str, overwrite: bool) -> Result<String, String> {
-    let dir = plans_dir(root);
-    fs::create_dir_all(&dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
-    let file = dir.join(format!("{}.txt", name));
-    if file.exists() && !overwrite {
-        return Err(format!("A plan named \"{}\" already exists.", name));
-    }
-    let tmp = dir.join(format!("{}.txt.tmp", name));
-    fs::write(&tmp, text).map_err(|e| format!("{}: {}", tmp.display(), e))?;
-    fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))?;
-    Ok(file.to_string_lossy().to_string())
-}
-
 #[tauri::command]
 fn read_text(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("{}: {}", path, e))
 }
-
-/// A file's bytes, sent raw (not as JSON): audio for the side panel's player.
-#[tauri::command]
-fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
-    fs::read(&path).map(tauri::ipc::Response::new).map_err(|e| format!("{}: {}", path, e))
-}
-
-/// Writes a file the user picked in a save dialog (GPX export), through a temp file next to it.
-#[tauri::command]
-fn write_text(sync: tauri::State<'_, Arc<sync::SyncHandle>>, path: String, text: String) -> Result<(), String> {
-    let file = PathBuf::from(&path);
-    let tmp = PathBuf::from(format!("{}.tmp", path));
-    fs::write(&tmp, text).map_err(|e| format!("{}: {}", tmp.display(), e))?;
-    let _ = sync;
-    fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))
-}
-
-// ── Google Drive sync ─────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 fn drive_status(sync: tauri::State<'_, Arc<sync::SyncHandle>>) -> sync::Status {
@@ -337,11 +218,6 @@ fn drive_pick_folder(sync: tauri::State<'_, Arc<sync::SyncHandle>>, id: String, 
 }
 
 /// Closes the app even though changes are still going up to Drive.
-#[tauri::command]
-fn app_close(app: tauri::AppHandle) {
-    app.exit(0);
-}
-
 fn settings_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -365,7 +241,7 @@ fn save_settings(app: tauri::AppHandle, json: String) -> Result<(), String> {
     fs::rename(&tmp, &file).map_err(|e| e.to_string())
 }
 
-// ── Overpass cache: one folder per namespace, one .meta.json + .data.json pair per entry ────
+// ── On-disk cache (roads and cleaned tracks; the folder keeps its old name): one folder per namespace, one .meta.json + .data.json pair per entry ────
 
 fn cache_dir(app: &tauri::AppHandle, namespace: &str) -> Result<PathBuf, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("overpass").join(namespace);
@@ -381,31 +257,6 @@ fn age_ms(path: &Path) -> Option<u128> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
     let now = SystemTime::now();
     Some(now.duration_since(modified).ok()?.as_millis())
-}
-
-#[derive(Serialize)]
-struct CacheEntry {
-    key: String,
-    meta: String,
-}
-
-/// Every entry younger than `max_age_ms`, with its metadata (small; the data is loaded on demand).
-#[tauri::command]
-fn cache_index(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Result<Vec<CacheEntry>, String> {
-    let dir = cache_dir(&app, &namespace)?;
-    let mut out = Vec::new();
-    for entry in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        if let Some(key) = name.strip_suffix(".meta.json") {
-            if age_ms(&path).map(|a| a <= max_age_ms as u128).unwrap_or(false) {
-                if let Ok(meta) = fs::read_to_string(&path) {
-                    out.push(CacheEntry { key: key.to_string(), meta });
-                }
-            }
-        }
-    }
-    Ok(out)
 }
 
 #[tauri::command]
@@ -439,310 +290,11 @@ fn cache_evict(app: tauri::AppHandle, namespace: String, max_age_ms: u64) -> Res
     Ok(removed)
 }
 
-// ── Embedded browser: a child webview laid over the side panel ────────────────────────────────
-
-const BROWSER_LABEL: &str = "browser";
-
-/// Runs in every page the embedded browser loads. Everywhere: links that want a new window (which a
-/// child webview cannot open) navigate this webview instead, and Alt+Left / Alt+Right are the
-/// browser's own back and forward (the app's screen history is walked only from the main webview). On Google it keeps only the search box and the
-/// results: hides the Google bar, the mobile header row (settings / share / logo), the result-type
-/// tabs (AI Mode / All / Images ...), the slim app bar and the spacers between them, the
-/// "AI Overview" title row and the rule that ran under the tabs, keeps the AI overview fully open
-/// (lifting its max-height and hiding the "Show more" overlay), and shrinks the header wrapper to
-/// the search box so no blank band is left. The clear (X), voice and Lens buttons in the search box are replaced by one toggle button:
-/// an image icon on web results that switches to the Images results for the same query, and a text
-/// icon on Images that goes back to the web results. Class names on Google
-/// change, so everything is found structurally; the ids used (`sfcnt`, `appbar`, `cnt`,
-/// `m-x-content`) are long-lived.
-const BROWSER_INIT_SCRIPT: &str = r#"
-(function () {
-  document.addEventListener('click', function (ev) {
-    var a = ev.target && ev.target.closest && ev.target.closest('a[target]');
-    if (a && /^_blank$/i.test(a.target)) a.target = '_self';
-  }, true);
-  var nativeOpen = window.open;
-  window.open = function (url, target, features) {
-    if (url && !/^_self$/i.test(target || '') && !features) { location.href = String(url); return null; }
-    return nativeOpen.apply(window, arguments);
-  };
-  window.addEventListener('keydown', function (ev) {
-    if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
-    if (ev.key === 'ArrowLeft') { ev.preventDefault(); history.back(); }
-    else if (ev.key === 'ArrowRight') { ev.preventDefault(); history.forward(); }
-  });
-})();
-(function () {
-  if (!/(^|\.)google\./.test(location.hostname)) return;
-  var css = '#gb, #gbwa, [aria-label="Google apps"], #sfcnt, #appbar, #oFNiHe { display: none !important; }' +
-    ' #cnt { padding-top: 0 !important; }' +
-    ' [aria-label="Search by voice"], [aria-label="Search by image"] { display: none !important; }' +
-    ' .te-images { display: flex; align-items: center; padding: 0 12px; cursor: pointer; }' +
-    ' .te-images svg { width: 24px; height: 24px; fill: currentColor; }' +
-    ' .te-collapsed { display: none !important; }';
-  var IMAGE_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/></svg>';
-  var TEXT_ICON = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M280-280h400v-80H280v80Zm0-160h400v-80H280v80Zm0-160h400v-80H280v80Zm-80 480q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg>';
-  var onImages = new URL(location.href).searchParams.get('udm') === '2';
-  function addCss() {
-    var s = document.createElement('style');
-    s.textContent = css;
-    (document.head || document.documentElement).appendChild(s);
-  }
-  function hideHeaderRow() {
-    // The Google logo floats above the search box and peeks out over it; drop it with its box.
-    var logo = document.getElementById('logo');
-    var logoBox = logo && logo.parentElement;
-    if (logoBox && !logoBox.dataset.teHidden) { logoBox.dataset.teHidden = '1'; logoBox.style.display = 'none'; }
-    var q = document.querySelector('[name="q"]');
-    var gear = document.querySelector('#og-te, [aria-label="Settings"]');
-    if (!gear || !q) return;
-    var e = gear;
-    while (e.parentElement && !e.parentElement.contains(q) && e.parentElement !== document.body) e = e.parentElement;
-    if (!e.contains(q) && !e.dataset.teHidden) { e.dataset.teHidden = '1'; e.style.display = 'none'; }
-  }
-  // The result-type tabs: the first navigation block in the results container that holds a list.
-  function hideTabs() {
-    var nav = document.querySelector('#cnt [role="navigation"]');
-    if (!nav || !nav.querySelector('[role="list"]') || nav.dataset.teHidden) return;
-    nav.dataset.teHidden = '1';
-    nav.style.display = 'none';
-    // Wrappers left holding only padding (Images results) collapse too.
-    var e = nav.parentElement;
-    for (var k = 0; k < 4 && e && e.id !== 'cnt' && e !== document.body; k++, e = e.parentElement) {
-      if (e.getBoundingClientRect().height < 20) e.style.paddingBottom = '0';
-    }
-  }
-  // The header wrapper has a fixed inline height sized for the (hidden) header row plus the search
-  // box; shrink it to the search box. Only written when it differs, so the observer does not loop.
-  function shrinkHeader() {
-    var form = document.getElementById('searchform');
-    var wrap = form && form.parentElement;
-    if (!wrap || !wrap.style.height) return;
-    var h = Math.max(0, Math.round(form.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top)) + 'px';
-    if (wrap.style.height !== h) wrap.style.height = h;
-  }
-  // The "AI Overview" title row: the ancestor of that heading that sits directly in the overview's
-  // content column (its parent is tall and has several children).
-  // Google re-renders the overview while it streams in, so this is re-checked on every change.
-  function hideOverviewTitle() {
-    var headings = document.querySelectorAll('#m-x-content [role="heading"]');
-    for (var i = 0; i < headings.length; i++) {
-      var h = headings[i];
-      if (h.textContent.trim() !== 'AI Overview' || h.getBoundingClientRect().height === 0) continue;
-      var e = h;
-      while (e.parentElement && !(e.parentElement.children.length > 1 && e.parentElement.getBoundingClientRect().height > 100)) e = e.parentElement;
-      e.style.display = 'none';
-    }
-  }
-  // Web results <-> Images for the current query (what the hidden Images / All tabs would do).
-  function imagesUrl() {
-    var u = new URL(location.href);
-    if (u.searchParams.get('udm') === '2') u.searchParams.delete('udm');
-    else { u.searchParams.set('udm', '2'); u.searchParams.delete('tbm'); }
-    ['sa', 'ved', 'ei', 'oq', 'gs_lp', 'sclient'].forEach(function (k) { u.searchParams.delete(k); });
-    return u.toString();
-  }
-  function hideClear() {
-    var clear = document.querySelector('[aria-label="Clear"]');
-    var row = clear && clear.parentElement;
-    if (row && !row.dataset.teHidden) { row.dataset.teHidden = '1'; row.style.display = 'none'; }
-  }
-  function addImagesButton() {
-    var voice = document.querySelector('[aria-label="Search by voice"]');
-    var box = voice && voice.parentElement;
-    if (!box || box.querySelector('.te-images')) return;
-    var b = document.createElement('div');
-    b.className = 'te-images';
-    b.setAttribute('role', 'button');
-    b.setAttribute('aria-label', onImages ? 'Web results' : 'Images');
-    b.title = onImages ? 'Web results' : 'Images';
-    b.style.color = getComputedStyle(voice).color;
-    b.innerHTML = onImages ? TEXT_ICON : IMAGE_ICON;
-    b.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); location.href = imagesUrl(); });
-    box.appendChild(b);
-  }
-  // The 1px rule that sat under the tabs: a zero-height block in the results container whose only
-  // visible content is a bordered hairline.
-  function hideStrayRule() {
-    var cnt = document.getElementById('cnt');
-    if (!cnt) return;
-    for (var i = 0; i < cnt.children.length; i++) {
-      var block = cnt.children[i];
-      if (block.dataset.teHidden || block.getBoundingClientRect().height > 1 || block.textContent.trim()) continue;
-      var lines = block.querySelectorAll('*');
-      for (var j = 0; j < lines.length; j++) {
-        var r = lines[j].getBoundingClientRect();
-        if (r.height <= 2 && r.width > 100 && getComputedStyle(lines[j]).borderBottomWidth !== '0px') {
-          block.dataset.teHidden = '1';
-          block.style.display = 'none';
-          break;
-        }
-      }
-    }
-  }
-  // Keep the AI overview open: the clipped wrapper is the nearest ancestor of "Show more" with a
-  // max-height; lift it and hide the overlay that holds the button.
-  function expandOverview() {
-    var buttons = document.querySelectorAll('[role="button"][aria-label^="Show more"], [role="button"][aria-label^="Show all"]');
-    for (var i = 0; i < buttons.length; i++) {
-      var b = buttons[i];
-      if (b.dataset.teDone) continue;
-      b.dataset.teDone = '1';
-      var e = b.parentElement;
-      var overlay = null;
-      while (e && e !== document.body) {
-        var cs = getComputedStyle(e);
-        if (!overlay && cs.position === 'absolute') overlay = e;
-        if (cs.maxHeight !== 'none') { e.style.maxHeight = 'none'; e.style.overflow = 'visible'; break; }
-        e = e.parentElement;
-      }
-      (overlay || b).style.display = 'none';
-      // The fade-out gradient over the last lines is its own absolute layer inside the wrapper.
-      var layers = (e || b.parentElement).querySelectorAll('*');
-      for (var j = 0; j < layers.length; j++) {
-        var ls = getComputedStyle(layers[j]);
-        if (ls.position === 'absolute' && ls.backgroundImage.indexOf('gradient') >= 0 && layers[j].getBoundingClientRect().width > 200) {
-          layers[j].style.display = 'none';
-        }
-      }
-    }
-  }
-  // Invisible blocks inside the overview (its sources panel is laid out with visibility:hidden and
-  // leaves a blank band) are taken out of the flow until Google shows them.
-  function collapseInvisible() {
-    var box = document.getElementById('m-x-content');
-    if (!box) return;
-    var done = box.querySelectorAll('.te-collapsed');
-    for (var i = 0; i < done.length; i++) {
-      done[i].classList.remove('te-collapsed');
-      if (getComputedStyle(done[i]).visibility === 'hidden') done[i].classList.add('te-collapsed');
-    }
-    var all = box.querySelectorAll('*');
-    for (var j = 0; j < all.length; j++) {
-      var e = all[j];
-      if (e.classList.contains('te-collapsed')) continue;
-      var cs = getComputedStyle(e);
-      if (cs.visibility !== 'hidden' || cs.display === 'none') continue;
-      if (e.getBoundingClientRect().height < 40) continue;
-      if (e.parentElement && getComputedStyle(e.parentElement).visibility === 'hidden') continue;
-      e.classList.add('te-collapsed');
-    }
-  }
-  function tidy() {
-    hideHeaderRow(); hideTabs(); hideStrayRule(); shrinkHeader(); hideOverviewTitle(); expandOverview();
-    collapseInvisible(); hideClear(); addImagesButton();
-  }
-  function start() {
-    addCss();
-    tidy();
-    var timer = null;
-    var observer = new MutationObserver(function () {
-      clearTimeout(timer);
-      timer = setTimeout(function () { tidy(); observer.takeRecords(); }, 250);
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
-  }
-  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
-})();
-"#;
-
-/// Geometry of the browser panel (logical px), kept so a window resize can re-fit the child webview:
-/// its width, and how much of the window bottom it leaves free (the panel's status strip).
-#[derive(Default)]
-struct BrowserState {
-    width: Mutex<f64>,
-    bottom_inset: Mutex<f64>,
-}
-
-fn browser_height(window: &tauri::Window, state: &BrowserState) -> Result<f64, String> {
-    let inset = *state.bottom_inset.lock().map_err(|e| e.to_string())?;
-    Ok((window_logical_height(window)? - inset).max(100.0))
-}
-
-fn browser_webview(window: &tauri::Window) -> Option<tauri::Webview> {
-    window.webviews().into_iter().find(|w| w.label() == BROWSER_LABEL)
-}
-
-fn window_logical_height(window: &tauri::Window) -> Result<f64, String> {
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let size = window.inner_size().map_err(|e| e.to_string())?;
-    Ok(size.to_logical::<f64>(scale).height)
-}
-
-/// Shows `url` in the embedded browser over the side panel: `width` logical px wide, from the top
-/// down to `bottom_inset` px above the window bottom (the panel's status strip stays visible).
-/// `focus`: the browser takes the keyboard (not when a screen is brought back from the panel's
-/// history, so Alt+Left / Alt+Right keep walking that history).
-/// Async so it runs off the main thread: creating a child webview waits on the main thread.
-#[tauri::command]
-async fn browser_open(window: tauri::Window, state: tauri::State<'_, BrowserState>, url: String, width: f64, bottom_inset: f64, focus: bool) -> Result<(), String> {
-    let url: tauri::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err(format!("Refusing to open {} in the browser", url.scheme()));
-    }
-    *state.width.lock().map_err(|e| e.to_string())? = width;
-    *state.bottom_inset.lock().map_err(|e| e.to_string())? = bottom_inset;
-    let height = browser_height(&window, &state)?;
-    if let Some(webview) = browser_webview(&window) {
-        webview.navigate(url).map_err(|e| e.to_string())?;
-        webview.set_position(LogicalPosition::new(0.0, 0.0)).map_err(|e| e.to_string())?;
-        webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
-        webview.show().map_err(|e| e.to_string())?;
-        if focus {
-            webview.set_focus().map_err(|e| e.to_string())?;
-        }
-    } else {
-        #[allow(unused_mut)]
-        let mut builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(url)).initialization_script(BROWSER_INIT_SCRIPT);
-        // On Windows every webview sharing the user-data folder must use the same browser
-        // arguments as the main window, or WebView2 refuses to start the child.
-        #[cfg(windows)]
-        if let Some(args) = window.config().app.windows.first().and_then(|w| w.additional_browser_args.clone()) {
-            builder = builder.additional_browser_args(&args);
-        }
-        window
-            .add_child(builder, LogicalPosition::new(0.0, 0.0), LogicalSize::new(width, height))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Follows the side panel when it is resized (a width of 0 hides the browser).
-#[tauri::command]
-async fn browser_resize(window: tauri::Window, state: tauri::State<'_, BrowserState>, width: f64, bottom_inset: f64) -> Result<(), String> {
-    *state.width.lock().map_err(|e| e.to_string())? = width;
-    *state.bottom_inset.lock().map_err(|e| e.to_string())? = bottom_inset;
-    if let Some(webview) = browser_webview(&window) {
-        if width <= 0.0 {
-            webview.hide().map_err(|e| e.to_string())?;
-        } else {
-            let height = browser_height(&window, &state)?;
-            webview.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
-/// Hides the embedded browser; the side panel is visible again.
-#[tauri::command]
-async fn browser_close(window: tauri::Window) -> Result<(), String> {
-    if let Some(webview) = browser_webview(&window) {
-        webview.hide().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(BrowserState::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             fs::create_dir_all(&data_dir)?;
@@ -754,38 +306,16 @@ pub fn run() {
                 }
             });
             app.manage(sync.clone());
-            // Keep the embedded browser fitted to the panel when the window is resized.
-            if let Some(window) = app.get_window("main") {
-                let handle = window.clone();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::Resized(_) = event {
-                        let state = handle.state::<BrowserState>();
-                        if let (Some(webview), Ok(height)) = (browser_webview(&handle), browser_height(&handle, &state)) {
-                            let width = *state.width.lock().unwrap();
-                            let _ = webview.set_size(LogicalSize::new(width, height));
-                        }
-                    }
-                });
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            browser_open,
-            browser_resize,
-            browser_close,
             scan_trips,
-            list_plans,
-            save_plan,
             read_text,
-            read_bytes,
-            write_text,
             load_settings,
             save_settings,
-            cache_index,
             cache_get,
             cache_put,
             cache_evict,
-            now_ms,
             drive_status,
             drive_set_root,
             drive_sync,
@@ -793,8 +323,7 @@ pub fn run() {
             drive_sign_out,
             drive_list_folders,
             drive_create_folder,
-            drive_pick_folder,
-            app_close
+            drive_pick_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -48,8 +48,8 @@ const cleaned = cleanTrack(segments, roads);              // MatchedPoint[][] â€
 ```
 
 `fetchRoadsForTrack` uses the three public Overpass endpoints with cooldown on 429/5xx and a
-pluggable per-tile cache (`RoadCache`: `get`/`set` by tile key). The app should share the cache
-with the OSM POI fetcher and expire entries after 30 days.
+pluggable per-tile cache (`RoadCache`: `get`/`set` by tile key). The app keeps it on disk and
+expires entries after 30 days.
 
 ## Files
 

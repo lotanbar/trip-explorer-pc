@@ -8,21 +8,16 @@ export interface RecordingInfo {
   incomplete: boolean;
 }
 
+/** A POI folder with a data.txt (see the spec's trips folder). */
 export interface PoiInfo {
+  /** The folder name: DD.MM.YYYY HH-MM-SS. */
   name: string;
   path: string;
   lat: number;
   lon: number;
   datetime: string;
-  description: string;
-  group: string | null;
-  media: string[];
-}
-
-/** An audio file in the trip's general_recordings/ folder. */
-export interface VoiceInfo {
-  name: string;
-  path: string;
+  /** The category key from data.txt, as written (null when missing). */
+  category: string | null;
 }
 
 export interface TripInfo {
@@ -31,34 +26,13 @@ export interface TripInfo {
   recordings_path: string;
   recordings: RecordingInfo[];
   pois: PoiInfo[];
-  voice: VoiceInfo[];
 }
 
 export const scanTrips = (root: string) => invoke<TripInfo[]>('scan_trips', { root });
 export const readText = (path: string) => invoke<string>('read_text', { path });
-export const readBytes = (path: string) => invoke<ArrayBuffer>('read_bytes', { path });
-/** Writes a file the user picked (GPX export). */
-export const writeText = (path: string, text: string) => invoke<void>('write_text', { path, text });
-
-export interface PlanFile {
-  name: string;
-  path: string;
-}
-
-export const listPlans = (root: string) => invoke<PlanFile[]>('list_plans', { root });
-/** Writes trips/plans/<name>.txt; refuses an existing file unless `overwrite`. Returns the file path. */
-export const savePlan = (root: string, name: string, text: string, overwrite: boolean) =>
-  invoke<string>('save_plan', { root, name, text, overwrite });
 export const loadSettingsJson = () => invoke<string | null>('load_settings');
 export const saveSettingsJson = (json: string) => invoke<void>('save_settings', { json });
 
-export interface CacheEntry {
-  key: string;
-  meta: string;
-}
-
-export const cacheIndex = (namespace: string, maxAgeMs: number) =>
-  invoke<CacheEntry[]>('cache_index', { namespace, maxAgeMs });
 export const cacheGet = (namespace: string, key: string, maxAgeMs: number) =>
   invoke<string | null>('cache_get', { namespace, key, maxAgeMs });
 export const cachePut = (namespace: string, key: string, meta: string, data: string) =>

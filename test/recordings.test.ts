@@ -11,7 +11,7 @@ describe('recording names', () => {
 });
 
 describe('trip colours', () => {
-  it('is stable per name and never the trail grey', () => {
+  it('is stable per name and saturated', () => {
     expect(tripColor('Greece 2026')).toBe(tripColor('Greece 2026'));
     expect(tripColor('Greece 2026')).not.toBe(tripColor('Italy 2025'));
     expect(tripColor('x')).toMatch(/^hsl\(\d+, 80%, 58%\)$/);

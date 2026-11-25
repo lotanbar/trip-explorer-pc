@@ -1,8 +1,8 @@
 # Trip Explorer – PC app
 
-A small viewer that shows a `trips/` folder on a map, with a place search and plan builder.
-Tauri 2 + MapLibre GL JS, online only. The only thing it writes into the trips folder is a plan file
-(`trips/plans/<name>.txt`) on Save; browsing and editing files is done in the file manager.
+A small viewer that shows a `trips/` folder on a map: where I rode (the recordings) and what I noted
+(my POIs). Tauri 2 + MapLibre GL JS, online only. It writes nothing into the trips folder itself; only
+Google Drive sync changes files there. Browsing and editing files is done in the file manager.
 
 ## Run
 
@@ -18,34 +18,17 @@ Needs Node, Rust (MSVC toolchain on Windows) and the WebView2 runtime (Windows) 
 
 | Path | Purpose |
 | --- | --- |
-| `src-tauri/src/lib.rs` | Rust commands: scan the trips folder, read a file, list/save plans, settings, the Overpass cache |
-| `src/main.ts` | Wires the map, sidebar, hover/click and the viewport fetches |
-| `src/groups.ts` | The fixed group list and the OSM tag → group mapping |
+| `src-tauri/src/lib.rs` | Rust commands: scan the trips folder, read a file, settings, the on-disk cache |
+| `src-tauri/src/sync.rs`, `drive.rs` | Google Drive sync |
+| `src/main.ts` | Wires the map, the side panel, hover and click |
+| `src/sidebar.ts` | The side panel: trips folder, Drive row, folder tree |
+| `src/categories.ts` | The six categories, shared with the phone app by copy |
 | `src/mapStyle.ts` | OpenFreeMap dark style plus Terrarium hillshade |
-| `src/mapLayers.ts` | Sources, layers and marker/pattern images |
-| `src/overpass.ts` | Endpoints with cooldown, strip fetching, 30-day cache |
-| `src/osmPois.ts`, `src/trails.ts` | The two Overpass features |
+| `src/mapLayers.ts`, `src/icons.ts` | Sources, layers and marker images |
 | `src/recordings.ts` | GPX loading and the display-only track cleanup |
-| `src/searchWindow.ts`, `src/photon.ts`, `src/plan.ts`, `src/gpx.ts`, `src/names.ts` | Search and plan: the window in the side panel, Photon search-as-you-type plus my own POIs by name, the plan model and file format, GPX import/export, name rules |
-| `src/screens.ts`, `src/dialog.ts` | The side panel's screen history (Alt+Left / Alt+Right); the in-app question box |
+| `src/drivePicker.ts`, `src/dialog.ts` | The Drive folder picker; the in-app question box |
 | `src/track-cleanup/` | The display-only track cleanup module, standalone with its own tests (`npm test` inside it) |
-| `src/icons/` | Bundled SVG icons (Maki, Temaki or hand-drawn) |
-
-Deviations from the spec (agreed on 2026-09-22):
-
-- Only named OSM POIs are fetched, and places of worship / cemeteries additionally need a notable tag (`wikidata`, `wikipedia`, `heritage`, `website`, `image`, `wikimedia_commons`, `description` or `name:en`); every countryside chapel is tagged and they swamped the map.
-- A name that is only the object's type, in any language ("Source" / "Πηγή" on a spring), counts as no name. The type names come from OSM's translated presets (`@openstreetmap/id-tagging-schema`); `node scripts/generic-names.mjs` rebuilds `src/genericNames.json` after the package is updated.
-- Clicking an OSM POI or a trail opens the search / website in an embedded browser laid over the side panel
-  (a Tauri child webview, `src/browser.ts` + `browser_open` in Rust) instead of the system browser. Clicking an
-  empty spot on the map brings the panel's controls back (the browser and the search window both go).
-- The side panel keeps an in-memory history of its screens (the controls, the search/plan window with the temp
-  or a saved plan, a browser page), gone when the app closes: Alt+Left / Alt+Right with the map or panel focused
-  step through it (`src/screens.ts`). When the embedded browser has the keyboard the keys are its own back /
-  forward instead (the page's init script calls `history.back()` / `history.forward()`). A screen brought back
-  from the history does not give the browser the keyboard, so the keys keep walking the history.
-- Place labels on the base map (cities, villages, islands ...) are drawn near-white and are clickable: they open the same search as a POI. Group colours are muted versions of the spec palette.
-- All trail categories use the same plain grey line; only the repeated icon differs (no dots, crossbars or ticks).
-- No zoom buttons, scale bar or attribution control on the map: pinch / ctrl+scroll zoom.
+| `src/icons/` | Bundled SVG icons (the same shapes as the phone's) |
 
 Settings live in `%APPDATA%\com.lotanbar.tripexplorer\settings.json` (Windows) or
-`$XDG_CONFIG_HOME/com.lotanbar.tripexplorer` (Linux); the Overpass cache in the matching cache folder.
+`$XDG_CONFIG_HOME/com.lotanbar.tripexplorer` (Linux); the roads and cleaned tracks in the matching cache folder.

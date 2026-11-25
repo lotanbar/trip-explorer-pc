@@ -2,12 +2,9 @@
  * The side panel's geometry: a drag handle on its right edge resizes it from the minimum width up
  * to the whole window; the × closes it and the menu button (bottom left of the map) opens it again.
  * When the window shrinks, the panel gives way first (down to its minimum width, the map keeping
- * its width); after that the map shrinks, all the way to nothing. The embedded browser, when
- * shown, follows the panel's width.
+ * its width); after that the map shrinks, all the way to nothing.
  */
 
-import { invoke } from '@tauri-apps/api/core';
-import { browserBottomInset, isBrowserOpen } from './browser';
 import { saveSettings, settings } from './settings';
 
 export const PANEL_MIN_WIDTH = 321;
@@ -24,7 +21,7 @@ let mapWidth: number | null = null;
 
 const maxPanel = () => Math.max(0, window.innerWidth - HANDLE_WIDTH);
 
-export function panelWidth(): number {
+function panelWidth(): number {
   if (mapWidth === null) {
     if (maxPanel() < PANEL_MIN_WIDTH) return maxPanel();
     mapWidth = maxPanel() - Math.min(Math.max(PANEL_MIN_WIDTH, settings.panelWidth ?? PANEL_MIN_WIDTH), maxPanel());
@@ -37,7 +34,6 @@ function apply(): void {
   const open = settings.panelOpen;
   app().classList.toggle('panel-closed', !open);
   app().style.setProperty('--panel', `${open ? panelWidth() : 0}px`);
-  if (isBrowserOpen()) invoke('browser_resize', { width: open ? panelWidth() : 0, bottomInset: browserBottomInset() }).catch(() => undefined);
 }
 
 export function openPanel(): void {

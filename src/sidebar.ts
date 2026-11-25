@@ -1,17 +1,14 @@
 /**
- * The side panel: root folder picker, the folder tree with checkboxes, the saved plans with
- * checkboxes (a whole plan or single stops), the group toggles and the trail toggles. The trips and
- * plans scroll inside their own sections. Every choice is written straight into `settings` and
- * reported through callbacks.
+ * The side panel: the trips folder picker, the Drive row and the folder tree with checkboxes (it
+ * scrolls inside its section). Every tick is written straight into `settings` and reported through
+ * a callback.
  */
 
 import { open } from '@tauri-apps/plugin-dialog';
-import { readBytes, type SyncStatus, type TripInfo } from './backend';
-import { GROUPS, groupForFile, groupById, NO_GROUP } from './groups';
-import { planStopKey, type SavedPlan } from './plan';
+import { type SyncStatus, type TripInfo } from './backend';
+import { categoryByKey } from './categories';
 import { iconSvg } from './icons';
 import { settings, saveSettings } from './settings';
-import { TRAIL_CATEGORIES } from './trails';
 import { tripColor, recordingDateRange } from './recordings';
 
 export interface SidebarCallbacks {
@@ -24,24 +21,16 @@ export interface SidebarCallbacks {
   /** The Drive line was clicked: what the last sync did. */
   onSyncDetails: () => void;
   onCheckedChanged: () => void;
-  onGroupsChanged: () => void;
-  onTrailsChanged: () => void;
-  /** A plan stop's "visited" box was ticked or cleared (`index`: its place in the plan file). */
-  onVisitedChanged: (planPath: string, index: number, visited: boolean) => void;
+  /** The × in the panel's head. */
+  onClose: () => void;
 }
 
 export class Sidebar {
   private readonly treeEl: HTMLElement;
-  private readonly planTreeEl: HTMLElement;
   private readonly rootLabel: HTMLElement;
   private readonly statusEl: HTMLElement;
   private trips: TripInfo[] = [];
   private checkboxes: HTMLInputElement[] = [];
-  private planBoxes: HTMLInputElement[] = [];
-  /** Plans whose stops are listed (by file); the rest show as one row. Not remembered. */
-  private readonly expanded = new Set<string>();
-  /** The open general-recording player, if any. */
-  private voicePlayer: { path: string; url: string; audio: HTMLAudioElement; play: HTMLElement } | null = null;
 
   constructor(private readonly root: HTMLElement, private readonly cb: SidebarCallbacks) {
     root.innerHTML = `
@@ -51,6 +40,7 @@ export class Sidebar {
           <div class="actions">
             <button id="pick-root" title="Choose the trips folder">Folder…</button>
             <button id="refresh" title="Re-scan the folders">Refresh</button>
+            <button id="panel-close" class="icon-button" title="Close the panel" aria-label="Close the panel"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           </div>
         </div>
         <div id="root-label" class="root-label muted">No folder chosen</div>
@@ -63,28 +53,9 @@ export class Sidebar {
         <div id="drive-current" class="drive-current muted" hidden></div>
         <div id="tree" class="tree"></div>
       </section>
-      <section class="panel-section plans-section">
-        <div class="section-head"><h2>Plans</h2></div>
-        <div id="plan-tree" class="tree"></div>
-      </section>
-      <section class="panel-section">
-        <div class="section-head">
-          <h2>Groups</h2>
-          <label class="master"><input type="checkbox" id="osm-master"> OSM POIs</label>
-        </div>
-        <div id="groups" class="toggle-list"></div>
-      </section>
-      <section class="panel-section">
-        <div class="section-head">
-          <h2>Trails</h2>
-          <label class="master"><input type="checkbox" id="trails-master"> Trails</label>
-        </div>
-        <div id="trails" class="toggle-list"></div>
-      </section>
       <div id="status" class="status" hidden></div>
     `;
     this.treeEl = root.querySelector('#tree')!;
-    this.planTreeEl = root.querySelector('#plan-tree')!;
     this.rootLabel = root.querySelector('#root-label')!;
     this.statusEl = root.querySelector('#status')!;
 
@@ -93,9 +64,8 @@ export class Sidebar {
     root.querySelector('#drive-button')!.addEventListener('click', () => cb.onDrive());
     root.querySelector('#sync-button')!.addEventListener('click', () => cb.onSync());
     root.querySelector('#drive-label')!.addEventListener('click', () => cb.onSyncDetails());
+    root.querySelector('#panel-close')!.addEventListener('click', () => cb.onClose());
 
-    this.buildGroupToggles();
-    this.buildTrailToggles();
     this.setRootLabel(settings.root);
   }
 
@@ -162,7 +132,6 @@ export class Sidebar {
   // ── Folder tree ──
 
   setTrips(trips: TripInfo[]): void {
-    this.closeVoice();
     this.trips = trips;
     this.checkboxes = [];
     this.treeEl.innerHTML = '';
@@ -190,11 +159,10 @@ export class Sidebar {
         recNode.appendChild(recChildren);
         children.appendChild(recNode);
       }
-      if (trip.voice.length > 0) children.appendChild(this.voiceFolder(trip));
       for (const poi of trip.pois) {
-        const group = groupForFile(poi.group);
-        const icon = `<span class="poi-icon" style="background:${group.color}">${iconSvg(group.icon) ?? ''}</span>`;
-        children.appendChild(this.node('poi', poi.name, [poi.path], checked, icon, '', `${poi.datetime}${poi.group ? ` · ${groupById(groupForFile(poi.group).id).name}` : ''}`));
+        const cat = categoryByKey(poi.category);
+        const icon = `<span class="poi-icon" style="background:${cat.color}">${iconSvg(cat.icon) ?? ''}</span>`;
+        children.appendChild(this.node('poi', poi.name, [poi.path], checked, icon, '', `${cat.name} · ${poi.datetime}`));
       }
       tripNode.appendChild(children);
       this.treeEl.appendChild(tripNode);
@@ -202,139 +170,8 @@ export class Sidebar {
     this.syncParents();
   }
 
-  /**
-   * general_recordings: audio of the trip that belongs to no POI. Not on the map, so no checkboxes:
-   * the arrow shows the files, and a file's play button opens a player under it.
-   */
-  private voiceFolder(trip: TripInfo): HTMLElement {
-    const key = `${trip.path}/general_recordings`;
-    const el = document.createElement('div');
-    el.className = 'node node-folder node-voice-folder';
-    const row = document.createElement('div');
-    row.className = 'row';
-    const caret = document.createElement('span');
-    caret.className = 'caret';
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = `general_recordings (${trip.voice.length})`;
-    row.append(caret, name);
-    const children = document.createElement('div');
-    children.className = 'children';
-    children.hidden = !this.expanded.has(key);
-    caret.textContent = children.hidden ? '▸' : '▾';
-    row.addEventListener('click', () => {
-      children.hidden = !children.hidden;
-      caret.textContent = children.hidden ? '▸' : '▾';
-      children.hidden ? this.expanded.delete(key) : this.expanded.add(key);
-    });
-    for (const voice of trip.voice) {
-      const item = document.createElement('div');
-      item.className = 'node node-voice';
-      const r = document.createElement('div');
-      r.className = 'row';
-      r.title = voice.path;
-      const play = document.createElement('span');
-      play.className = 'voice-play';
-      play.textContent = '▶';
-      const label = document.createElement('span');
-      label.className = 'name';
-      label.textContent = voice.name.replace(/\.[^.]+$/, '');
-      r.append(play, label);
-      r.addEventListener('click', () => void this.toggleVoice(item, voice.path, play));
-      item.appendChild(r);
-      children.appendChild(item);
-    }
-    el.append(row, children);
-    return el;
-  }
-
-  /** One player at a time: opens under the clicked file and plays it; a second click closes it. */
-  private async toggleVoice(item: HTMLElement, path: string, play: HTMLElement): Promise<void> {
-    const open = this.voicePlayer;
-    this.closeVoice();
-    if (open?.path === path) return;
-    try {
-      const bytes = await readBytes(path);
-      const url = URL.createObjectURL(new Blob([bytes], { type: path.toLowerCase().endsWith('.opus') || path.toLowerCase().endsWith('.ogg') ? 'audio/ogg' : '' }));
-      const audio = document.createElement('audio');
-      audio.className = 'voice-audio';
-      audio.controls = true;
-      audio.src = url;
-      item.appendChild(audio);
-      play.textContent = '■';
-      this.voicePlayer = { path, url, audio, play };
-      await audio.play().catch(() => {});
-    } catch (e) {
-      console.error('Could not open the recording', path, e);
-    }
-  }
-
-  private closeVoice(): void {
-    const p = this.voicePlayer;
-    if (!p) return;
-    p.audio.pause();
-    p.audio.remove();
-    URL.revokeObjectURL(p.url);
-    p.play.textContent = '▶';
-    this.voicePlayer = null;
-  }
-
-  // ── Plans ──
-
-  /** The saved plans: a row per plan (ticks all its stops) with its stops under it when expanded. */
-  setPlans(plans: SavedPlan[]): void {
-    this.planBoxes = [];
-    this.planTreeEl.innerHTML = '';
-    if (plans.length === 0) {
-      this.planTreeEl.innerHTML = '<div class="muted">No saved plans</div>';
-      return;
-    }
-    const checked = new Set(settings.checked);
-    for (const plan of plans) {
-      const leaves = plan.stops.map((_, i) => planStopKey(plan.path, i));
-      const color = tripColor(plan.name); // from the name, like a trip's; the map uses the same
-      const swatch = `<span class="swatch" style="background:${color}"></span>`;
-      const planNode = this.node('plan', plan.name, leaves, checked, swatch, '', plan.path, this.planBoxes);
-      const children = document.createElement('div');
-      children.className = 'children';
-      children.hidden = !this.expanded.has(plan.path);
-      plan.stops.forEach((stop, i) => {
-        const stopNode = this.node('stop', stop.name, [leaves[i]], checked, `<span class="stop-dot" style="background:${color}"></span>`, '', stop.name, this.planBoxes);
-        // The second box, at the row's end: visited (the name gets struck through). Saved in the plan file.
-        const visited = document.createElement('input');
-        visited.type = 'checkbox';
-        visited.className = 'visited-box';
-        visited.title = 'Visited';
-        visited.checked = !!stop.visited;
-        stopNode.classList.toggle('visited', visited.checked);
-        visited.addEventListener('change', () => {
-          stopNode.classList.toggle('visited', visited.checked);
-          this.cb.onVisitedChanged(plan.path, i, visited.checked);
-        });
-        stopNode.querySelector('.row')!.appendChild(visited);
-        children.appendChild(stopNode);
-      });
-      // A span, not a button: a button inside the row's label would take the label's clicks from the checkbox.
-      const caret = document.createElement('span');
-      caret.className = 'caret';
-      caret.setAttribute('role', 'button');
-      caret.title = 'Show / hide the stops';
-      caret.textContent = children.hidden ? '▸' : '▾';
-      caret.addEventListener('click', (e) => {
-        e.preventDefault(); // not a click on the label: the checkbox stays as it is
-        children.hidden = !children.hidden;
-        caret.textContent = children.hidden ? '▸' : '▾';
-        children.hidden ? this.expanded.delete(plan.path) : this.expanded.add(plan.path);
-      });
-      planNode.querySelector('.row')!.prepend(caret);
-      planNode.appendChild(children);
-      this.planTreeEl.appendChild(planNode);
-    }
-    this.syncParents();
-  }
-
   /** One tree row. `leaves` are the paths the checkbox controls (one for a leaf, many for a folder). */
-  private node(kind: string, label: string, leaves: string[], checked: Set<string>, prefixHtml = '', badge = '', title = '', boxes = this.checkboxes): HTMLElement {
+  private node(kind: string, label: string, leaves: string[], checked: Set<string>, prefixHtml = '', badge = '', title = ''): HTMLElement {
     const el = document.createElement('div');
     el.className = `node node-${kind}`;
     const row = document.createElement('label');
@@ -352,7 +189,7 @@ export class Sidebar {
       this.syncParents();
       this.cb.onCheckedChanged();
     });
-    boxes.push(box);
+    this.checkboxes.push(box);
     row.appendChild(box);
     const text = document.createElement('span');
     text.className = 'label';
@@ -366,7 +203,7 @@ export class Sidebar {
   /** Folder checkboxes reflect their leaves: all → checked, some → indeterminate. */
   private syncParents(): void {
     const checked = new Set(settings.checked);
-    for (const box of [...this.checkboxes, ...this.planBoxes]) {
+    for (const box of this.checkboxes) {
       const leaves = JSON.parse(box.dataset.leaves!) as string[];
       const n = leaves.filter((l) => checked.has(l)).length;
       box.checked = n > 0 && n === leaves.length;
@@ -376,81 +213,5 @@ export class Sidebar {
 
   get currentTrips(): TripInfo[] {
     return this.trips;
-  }
-
-  // ── Groups ──
-
-  private buildGroupToggles(): void {
-    const master = this.root.querySelector<HTMLInputElement>('#osm-master')!;
-    master.checked = settings.osmPois;
-    master.addEventListener('change', () => {
-      settings.osmPois = master.checked;
-      saveSettings();
-      this.cb.onGroupsChanged();
-    });
-    const list = this.root.querySelector('#groups')!;
-    const hidden = new Set(settings.groupsHidden);
-    for (const group of [...GROUPS, NO_GROUP]) {
-      const row = document.createElement('label');
-      row.className = 'toggle';
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = !hidden.has(group.id);
-      box.addEventListener('change', () => {
-        const set = new Set(settings.groupsHidden);
-        box.checked ? set.delete(group.id) : set.add(group.id);
-        settings.groupsHidden = [...set];
-        saveSettings();
-        this.cb.onGroupsChanged();
-      });
-      row.appendChild(box);
-      const icon = document.createElement('span');
-      icon.className = 'poi-icon';
-      icon.style.background = group.color;
-      icon.innerHTML = iconSvg(group.icon) ?? '';
-      row.appendChild(icon);
-      const name = document.createElement('span');
-      name.textContent = group.name;
-      if (group.osmOnly) name.insertAdjacentHTML('beforeend', '<span class="osm-only" title="Only OSM POIs can have this group">OSM</span>');
-      row.appendChild(name);
-      list.appendChild(row);
-    }
-  }
-
-  // ── Trails ──
-
-  private buildTrailToggles(): void {
-    const master = this.root.querySelector<HTMLInputElement>('#trails-master')!;
-    master.checked = settings.trails;
-    master.addEventListener('change', () => {
-      settings.trails = master.checked;
-      saveSettings();
-      this.cb.onTrailsChanged();
-    });
-    const list = this.root.querySelector('#trails')!;
-    const hidden = new Set(settings.trailsHidden);
-    for (const cat of TRAIL_CATEGORIES) {
-      const row = document.createElement('label');
-      row.className = 'toggle';
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = !hidden.has(cat.id);
-      box.addEventListener('change', () => {
-        const set = new Set(settings.trailsHidden);
-        box.checked ? set.delete(cat.id) : set.add(cat.id);
-        settings.trailsHidden = [...set];
-        saveSettings();
-        this.cb.onTrailsChanged();
-      });
-      row.appendChild(box);
-      const icon = document.createElement('span');
-      icon.className = 'trail-icon';
-      icon.innerHTML = iconSvg(cat.icon) ?? '';
-      row.appendChild(icon);
-      const name = document.createElement('span');
-      name.textContent = cat.name;
-      row.appendChild(name);
-      list.appendChild(row);
-    }
   }
 }

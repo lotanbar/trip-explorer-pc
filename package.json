@@ -17,7 +17,6 @@
     "maplibre-gl": "^6.10.0"
   },
   "devDependencies": {
-    "@openstreetmap/id-tagging-schema": "^7.2.0",
     "@tauri-apps/cli": "^2",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^26.6.2",

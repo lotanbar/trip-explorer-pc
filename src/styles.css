@@ -7,7 +7,6 @@
   --muted: #8a8a8a;
   --primary: #2196f3;
   --amber: #ffc107;
-  --trail: #bdbdbd;
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -119,9 +118,10 @@ body {
 }
 
 .icon-button {
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
 }
 
 .panel-section {
@@ -132,7 +132,6 @@ body {
   min-height: 0;
 }
 
-/* The trips and the plans take what is left and scroll inside; groups and trails keep their size. */
 .panel-section {
   flex: none;
 }
@@ -140,48 +139,6 @@ body {
 .panel-section.trips-section {
   flex: 1 1 0;
   min-height: 120px;
-}
-
-.panel-section.plans-section {
-  flex: 0 1 auto;
-  max-height: 24%;
-  min-height: 60px;
-}
-
-.tree .caret {
-  flex: none;
-  width: 14px;
-  margin-right: -2px;
-  color: var(--muted);
-  font-size: 11px;
-  text-align: center;
-}
-
-.tree .caret:hover {
-  color: var(--text);
-}
-
-.stop-dot {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 1px solid #fff;
-}
-
-.node-plan > .row .name {
-  font-weight: 600;
-}
-
-/* A plan stop ticked as visited: a thin line through the name, still readable. */
-.node-stop.visited > .row .name {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-  color: var(--muted);
-}
-
-.visited-box {
-  margin-left: auto;
 }
 
 .section-head {
@@ -276,26 +233,6 @@ button:hover {
   color: var(--muted);
 }
 
-/* general_recordings: a play button per file, one audio player at a time under the file. */
-.voice-play {
-  flex: none;
-  width: 14px;
-  color: var(--muted);
-  font-size: 10px;
-  text-align: center;
-}
-
-.node-voice > .row:hover .voice-play {
-  color: var(--text);
-}
-
-.voice-audio {
-  display: block;
-  width: calc(100% - 8px);
-  height: 32px;
-  margin: 2px 4px 4px;
-}
-
 .badge {
   font-size: 10px;
   padding: 0 5px;
@@ -328,299 +265,6 @@ button:hover {
   fill: #fff;
 }
 
-.trail-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex: none;
-}
-
-.trail-icon svg {
-  width: 14px;
-  height: 14px;
-  fill: var(--trail);
-}
-
-.toggle-list {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px 8px;
-}
-
-.toggle,
-.master {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  padding: 2px 0;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.toggle > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.toggle .osm-only {
-  font-size: 10px;
-  color: var(--muted);
-  margin-left: 2px;
-}
-
-/* ── Search and plan ── */
-
-.search-bar {
-  margin-top: auto; /* the bottom of the panel, whatever is above it */
-  flex: none;
-  display: flex;
-  gap: 6px;
-  padding: 6px 8px;
-  border-top: 1px solid var(--border);
-}
-
-#panel-nav {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 6px;
-}
-
-.search-bar input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.search-bar input,
-.plan-name {
-  width: 100%;
-  background: var(--surface-2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 5px 8px;
-  font: inherit;
-}
-
-.search-bar input:focus,
-.plan-name:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-#sidebar.search-open .panel-section {
-  display: none;
-}
-
-.search-window {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.plan-section {
-  flex: 0 1 auto;
-  max-height: 55%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--border);
-}
-
-.plan-section .section-head {
-  padding: 8px 12px 6px;
-  margin: 0;
-}
-
-.plan-section .icon-button {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 6px;
-}
-
-.plan-section .plan-list {
-  padding-bottom: 8px;
-}
-
-.plan-name {
-  width: 120px;
-  padding: 2px 6px;
-}
-
-.plans-menu-wrap {
-  position: relative;
-  flex: none;
-  display: flex;
-}
-
-#plans-button {
-  white-space: nowrap;
-}
-
-.plans-menu {
-  position: absolute;
-  right: 0;
-  bottom: 100%;
-  margin-bottom: 4px;
-  z-index: 20;
-  min-width: 160px;
-  max-height: 260px;
-  overflow-y: auto;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-}
-
-.plans-menu .item {
-  text-align: left;
-  border: none;
-  border-radius: 0;
-  background: none;
-  padding: 5px 10px;
-  white-space: nowrap;
-}
-
-.plans-menu button.item:hover {
-  background: var(--surface);
-}
-
-.plans-menu .item.current {
-  color: var(--primary);
-}
-
-.plans-menu .divider {
-  flex: none;
-  height: 1px;
-  margin: 3px 0;
-  background: var(--border);
-}
-
-.plan-list {
-  margin: 0;
-  padding: 0 12px 6px;
-  list-style: none;
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.plan-list .stop {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 4px;
-  border-radius: 3px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.plan-list .stop:hover {
-  background: var(--surface-2);
-}
-
-.plan-list .stop.dragging {
-  opacity: 0.4;
-}
-
-.plan-list .stop.drop-target {
-  box-shadow: inset 0 2px 0 var(--primary);
-}
-
-.plan-list .num {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin: 0 4px;
-  border-radius: 50%;
-  background: var(--primary);
-}
-
-.plan-list .name,
-.result .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.plan-list .empty {
-  padding: 4px;
-  white-space: normal;
-}
-
-.results-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 10px 12px 4px;
-}
-
-.results-head .icon-button {
-  margin-left: auto;
-}
-
-.results-head span {
-  font-size: 12px;
-}
-
-.result-list {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  padding: 0 12px 6px;
-  min-height: 0;
-}
-
-.result {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 4px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.result:hover {
-  background: var(--surface-2);
-}
-
-.result .pin {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--primary);
-}
-
-.result.in-plan .pin {
-  background: var(--primary);
-}
-
-.result.mine .pin {
-  border-color: var(--amber);
-}
-
-.result.mine.in-plan .pin {
-  background: var(--amber);
-}
-
-.result .text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.result .sub {
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .status {
   padding: 4px 12px 6px;
   font-size: 12px;
@@ -649,7 +293,6 @@ button:hover {
   overflow-wrap: anywhere;
   max-width: 320px;
 }
-
 
 /* ── Dialog ── */
 
